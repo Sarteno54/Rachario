@@ -1,0 +1,1458 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Rachario</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Rachario">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#e7e4cd">
+<link rel="manifest" href="data:application/manifest+json,{%22name%22:%22Rachario%22,%22short_name%22:%22Rachario%22,%22start_url%22:%22.%22,%22display%22:%22standalone%22,%22background_color%22:%22%23e7e4cd%22,%22theme_color%22:%22%23e7e4cd%22}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper: #e7e4cd;
+    --paper-line: #cdc8b8;
+    --paper-line-soft: #ddd9c9;
+    --ink: #262420;
+    --ink-soft: #6b6658;
+    --ink-faint: #a29d8c;
+    --accent: #3e5c9a;
+    --accent-soft: #d9e0ee;
+    --danger: #b0442f;
+    --surface: rgba(255,255,255,.35);
+    --cell-bg: rgba(255,255,255,.4);
+    --radius: 4px;
+    --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  }
+  html[data-theme="dark"]{
+    --paper: #131317;
+    --paper-line: #2c2c2f;
+    --paper-line-soft: #1c1c1f;
+    --ink: #f1efe8;
+    --ink-soft: #a39d90;
+    --ink-faint: #656058;
+    --accent: #7c98e0;
+    --accent-soft: #24304a;
+    --danger: #e2725a;
+    --surface: rgba(255,255,255,.045);
+    --cell-bg: rgba(255,255,255,.05);
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background:
+      linear-gradient(var(--paper-line-soft) 1px, transparent 1px) 0 0/100% 34px,
+      var(--paper);
+    color:var(--ink);
+    font-family:var(--sans);
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+    transition:background-color .2s ease, color .2s ease;
+    padding-bottom:78px;
+  }
+  ::selection{ background:var(--accent-soft); }
+
+  .wrap{ max-width:900px; margin:0 auto; padding:0 20px 40px; }
+
+  /* ---------- Top bar ---------- */
+  header.top{
+    position:sticky; top:0; z-index:20;
+    background:var(--paper);
+    border-bottom:2px solid var(--ink);
+    padding:18px 0 14px;
+  }
+  header.top .row{
+    max-width:900px; margin:0 auto; padding:0 20px;
+    display:flex; align-items:center; justify-content:space-between; gap:16px;
+  }
+  .brand{ display:flex; flex-direction:column; gap:2px; }
+  .brand .kicker{ font-family:var(--mono); font-size:11px; letter-spacing:.04em; color:var(--ink-soft); }
+  .brand h1{ margin:0; font-family:var(--mono); font-weight:600; font-size:24px; letter-spacing:-0.01em; }
+  .brand h1 .grid-dot{ color:var(--accent); }
+  .btn{
+    font-family:var(--sans); font-weight:600; font-size:14px;
+    border:2px solid var(--ink); background:var(--ink); color:var(--paper);
+    padding:10px 16px; border-radius:var(--radius); cursor:pointer; white-space:nowrap;
+  }
+  .btn:hover{ background:var(--accent); border-color:var(--accent); }
+  .btn.ghost{ background:transparent; color:var(--ink); }
+  .btn.ghost:hover{ background:var(--ink); color:var(--paper); }
+  .btn.small{ padding:6px 10px; font-size:12px; }
+  .btn.danger{ border-color:var(--danger); background:transparent; color:var(--danger); }
+  .btn.danger:hover{ background:var(--danger); color:#fff; }
+  .fab-add{
+    width:38px; height:38px; border-radius:50%; border:2px solid var(--ink);
+    background:var(--ink); color:var(--paper); font-size:20px; line-height:1;
+    display:flex; align-items:center; justify-content:center; cursor:pointer; flex:none;
+  }
+  .fab-add:hover{ background:var(--accent); border-color:var(--accent); }
+
+  /* ---------- Nav (arriba de contenido, dentro de la vista) ---------- */
+  .nav-cursor{
+    display:flex; align-items:center; justify-content:center; gap:18px;
+    margin:20px 0 16px;
+  }
+  .nav-cursor button{
+    width:30px; height:30px; border-radius:50%; border:1px solid var(--paper-line);
+    background:transparent; color:var(--ink); cursor:pointer; font-size:16px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .nav-cursor button:hover{ border-color:var(--ink); }
+  .nav-cursor .label{ font-family:var(--mono); font-weight:600; font-size:16px; min-width:150px; text-align:center; }
+
+  .today-line{ font-family:var(--mono); font-size:12px; color:var(--ink-soft); margin:-6px 0 14px; }
+
+  /* ---------- Stats strip (home / Mes) ---------- */
+  .stats{
+    display:flex; margin:0 0 8px;
+    border:1px solid var(--paper-line); border-radius:var(--radius);
+    overflow:hidden; background:var(--surface);
+  }
+  .stat{ flex:1; padding:12px 16px; border-right:1px solid var(--paper-line); }
+  .stat:last-child{ border-right:none; }
+  .stat .num{ font-family:var(--mono); font-size:22px; font-weight:600; line-height:1; }
+  .stat .lbl{ font-size:11px; color:var(--ink-soft); margin-top:5px; }
+
+  /* ---------- Tarjeta de hábito (genérica) ---------- */
+  .habit-card{
+    border:1px solid var(--paper-line); border-radius:10px; background:var(--surface);
+    padding:16px; margin-bottom:16px;
+  }
+  .habit-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
+  .habit-id{ display:flex; align-items:center; gap:10px; min-width:0; }
+  .habit-icon{
+    font-size:19px; width:38px; height:38px; flex:none; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .habit-name{ font-weight:600; font-size:15px; line-height:1.25; }
+  .habit-sub{ font-size:11px; color:var(--ink-soft); font-family:var(--mono); }
+  .habit-right{ display:flex; align-items:center; gap:8px; flex:none; }
+  .flame{
+    font-family:var(--mono); font-size:12px; font-weight:600; display:flex; align-items:center; gap:4px;
+    background:var(--accent-soft); color:var(--accent); padding:4px 9px; border-radius:20px;
+  }
+  .habit-badges{ display:flex; flex-wrap:wrap; gap:6px; margin:-4px 0 12px; }
+  .pill{
+    font-family:var(--mono); font-size:11px; font-weight:600; display:flex; align-items:center; gap:4px;
+    background:var(--surface); border:1px solid var(--paper-line); color:var(--ink-soft); padding:4px 9px; border-radius:20px;
+  }
+  .icon-btn{
+    border:1px solid var(--paper-line); background:transparent; color:var(--ink-soft);
+    width:28px; height:28px; border-radius:var(--radius); cursor:pointer;
+    display:flex; align-items:center; justify-content:center; font-size:13px;
+  }
+  .icon-btn:hover{ border-color:var(--ink); color:var(--ink); }
+
+  /* ---------- Celdas (compartidas por Mes / Semana / Año) ---------- */
+  .cell{
+    border-radius:4px; border:1px solid var(--paper-line); background:var(--cell-bg); cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .cell-num{ font-family:var(--mono); font-size:10.5px; color:var(--ink-faint); pointer-events:none; user-select:none; }
+  .cell.done .cell-num{ color:#fff; font-weight:600; }
+  .cell.future .cell-num{ opacity:.7; }
+  .cell.off .cell-num{ color:var(--ink-faint); }
+  .cell.future:not(.done){ border:1px dashed var(--paper-line); background:transparent; opacity:.55; }
+  .cell.pad{ cursor:default; border:none; background:transparent; }
+  .cell.off{ cursor:default; background:repeating-linear-gradient(135deg, var(--paper-line-soft), var(--paper-line-soft) 2px, transparent 2px, transparent 4px); border-color:var(--paper-line-soft); }
+  .cell.done{ border-color:transparent; }
+  .cell.today{ outline:2px solid var(--ink); outline-offset:1px; }
+  .cell.wk-complete{ box-shadow:inset 0 0 0 2px var(--wk-color, var(--accent)); }
+  .cell:hover:not(.pad){ border-color:var(--ink); }
+
+  /* Mes: grid de calendario 7 columnas */
+  .month-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:6px; }
+  .month-grid .cell{ aspect-ratio:1/1; width:100%; }
+
+  /* Semana: 7 columnas + etiquetas */
+  .week-days{ display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin-bottom:6px; }
+  .week-days span{ text-align:center; font-size:10px; color:var(--ink-soft); font-family:var(--mono); }
+  .week-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:6px; }
+  .week-grid .cell{ height:34px; }
+  .week-grid .cell-num{ font-size:12px; }
+
+  /* Año: 12 mini-calendarios mensuales */
+  .year-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(190px,1fr)); gap:14px; }
+  .year-month-card{ border:1px solid var(--paper-line); border-radius:8px; padding:10px; background:rgba(255,255,255,.02); }
+  .year-month-title{ font-family:var(--mono); font-weight:600; font-size:11.5px; margin-bottom:8px; color:var(--ink-soft); text-transform:capitalize; }
+  .year-mini-grid{ gap:3px; }
+  .year-mini-grid .cell-num{ font-size:8.5px; }
+
+  /* Año / Estadística: grid tipo mapa de calor, scroll horizontal */
+  .heat-scroll{ overflow-x:auto; padding-bottom:4px; }
+  .heat-months{ display:flex; gap:3px; width:max-content; margin-bottom:3px; }
+  .heat-months span{ width:16px; font-size:8px; color:var(--ink-faint); font-family:var(--mono); }
+  .heat-months span.month-start{ margin-left:9px; }
+  .heat-cols{ display:flex; gap:3px; width:max-content; }
+  .heat-week{ display:flex; flex-direction:column; gap:3px; padding:2px; border-radius:4px; position:relative; }
+  .heat-week.hw-complete{ box-shadow:inset 0 0 0 2px var(--wk-color, var(--accent)); }
+  .heat-week.month-start{ margin-left:9px; }
+  .heat-week.month-start::before{ content:""; position:absolute; left:-6px; top:0; bottom:0; width:1px; background:var(--paper-line); }
+  .heat-week .cell{ width:16px; height:16px; }
+  .heat-week .cell-num{ font-size:6.5px; }
+
+  /* ---------- Empty state ---------- */
+  .empty{ margin-top:30px; text-align:left; padding:30px 0; border-top:2px dashed var(--paper-line); border-bottom:2px dashed var(--paper-line); }
+  .empty h2{ font-family:var(--mono); font-size:18px; margin:0 0 8px; }
+  .empty p{ color:var(--ink-soft); font-size:14px; max-width:480px; line-height:1.6; margin:0 0 16px; }
+
+  /* ---------- Bottom nav ---------- */
+  nav.bottom{
+    position:fixed; left:0; right:0; bottom:0; z-index:30;
+    background:var(--paper); border-top:1px solid var(--paper-line);
+    display:flex; padding:6px 4px calc(env(safe-area-inset-bottom,0px) + 4px);
+  }
+  nav.bottom button{
+    flex:1; background:none; border:none; cursor:pointer; padding:8px 2px 6px;
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+    color:var(--ink-faint); font-family:var(--sans); font-size:10.5px;
+  }
+  nav.bottom button svg{ width:20px; height:20px; }
+  nav.bottom button.active{ color:var(--accent); }
+  nav.bottom button.active svg{ stroke:var(--accent); }
+
+  /* ---------- Settings list ---------- */
+  .settings-list{ border-top:1px solid var(--paper-line); }
+  .setting-row{
+    display:flex; align-items:center; gap:14px; padding:14px 4px;
+    border-bottom:1px solid var(--paper-line); cursor:pointer; background:none; border-left:none; border-right:none; border-top:none;
+    width:100%; text-align:left; font-family:var(--sans); color:var(--ink);
+  }
+  .setting-row:hover{ background:var(--surface); }
+  .setting-icon{
+    width:34px; height:34px; border-radius:50%; flex:none;
+    display:flex; align-items:center; justify-content:center; font-size:16px; color:#fff;
+  }
+  .setting-label{ font-size:14.5px; font-weight:500; flex:1; }
+  .setting-value{ font-size:12.5px; color:var(--ink-soft); font-family:var(--mono); }
+  .setting-chev{ color:var(--ink-faint); font-size:14px; }
+
+  /* ---------- Estadística ---------- */
+  .stat-select{
+    width:100%; font-family:var(--sans); font-weight:600; font-size:15px; padding:12px 14px;
+    border:1px solid var(--paper-line); border-radius:30px; background:var(--surface); color:var(--ink);
+    margin-bottom:4px; appearance:none; cursor:pointer;
+  }
+  .kpi-row{ display:flex; gap:12px; margin:18px 0; }
+  .kpi{ flex:1; border:1px solid var(--paper-line); border-radius:10px; padding:16px; background:var(--surface); }
+  .kpi .icon{ width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; color:#fff; margin-bottom:10px; }
+  .kpi .num{ font-family:var(--mono); font-size:24px; font-weight:600; }
+  .kpi .lbl{ font-size:11px; color:var(--ink-soft); margin-top:3px; }
+  .section-title{ font-family:var(--mono); font-weight:600; font-size:14px; margin:26px 0 14px; }
+  .barchart{ display:flex; align-items:flex-end; gap:5px; height:130px; border-bottom:1px solid var(--paper-line); padding-bottom:0; margin-top:22px; }
+  .bar-col{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; }
+  .bar-col .bar{ width:100%; border-radius:3px 3px 0 0; min-height:2px; position:relative; }
+  .bar-pct{ position:absolute; top:-17px; left:50%; transform:translateX(-50%); font-size:9px; font-family:var(--mono); color:var(--ink-soft); white-space:nowrap; }
+  .bar-col .bar-lbl{ font-size:9px; margin-top:6px; color:var(--ink-soft); font-family:var(--mono); }
+
+  /* ---------- Modal ---------- */
+  .overlay{ position:fixed; inset:0; background:rgba(10,10,10,.5); display:none; align-items:flex-start; justify-content:center; padding:40px 16px; z-index:50; overflow-y:auto; }
+  .overlay.open{ display:flex; }
+  .modal{ background:var(--paper); border:2px solid var(--ink); border-radius:var(--radius); width:100%; max-width:440px; padding:24px; }
+  .modal h2{ font-family:var(--mono); font-size:18px; margin:0 0 18px; }
+  .modal p.hint{ font-size:13px; color:var(--ink-soft); line-height:1.6; margin-top:-8px; }
+  .field{ margin-bottom:16px; }
+  .field label{ display:block; font-size:12px; font-weight:600; color:var(--ink-soft); margin-bottom:6px; }
+  .field input[type=text]{ width:100%; font-family:var(--sans); font-size:14px; padding:10px 12px; border:1px solid var(--paper-line); border-radius:var(--radius); background:var(--surface); color:var(--ink); }
+  .field input[type=text]:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+  .icon-grid{ max-height:220px; overflow-y:auto; overflow-x:hidden; border:1px solid var(--paper-line); border-radius:6px; padding:8px; background:var(--surface); }
+  .icon-group-label{ font-family:var(--mono); font-size:10px; font-weight:600; color:var(--ink-soft); margin:8px 0 5px; text-transform:uppercase; letter-spacing:.03em; }
+  .icon-group-label:first-child{ margin-top:0; }
+  .icon-group-row{ display:flex; flex-wrap:wrap; gap:6px; }
+  .icon-opt{ width:34px; height:34px; border:1px solid var(--paper-line); border-radius:var(--radius); background:var(--surface); cursor:pointer; font-size:16px; display:flex; align-items:center; justify-content:center; }
+  .icon-opt.sel{ border:2px solid var(--ink); background:var(--accent-soft); }
+  .color-grid{ display:flex; flex-wrap:wrap; gap:8px; }
+  .color-opt{ width:28px; height:28px; border-radius:50%; cursor:pointer; border:2px solid transparent; }
+  .color-opt.sel{ border-color:var(--ink); }
+  .day-grid{ display:flex; gap:6px; flex-wrap:wrap; }
+  .day-opt{ padding:7px 0; width:38px; text-align:center; font-size:12px; font-family:var(--mono); border:1px solid var(--paper-line); border-radius:var(--radius); cursor:pointer; background:var(--surface); color:var(--ink); }
+  .day-opt.sel{ background:var(--ink); color:var(--paper); border-color:var(--ink); }
+  .freq-toggle{ display:flex; gap:8px; margin-bottom:12px; }
+  .freq-toggle button{ flex:1; padding:8px; font-size:13px; font-family:var(--sans); font-weight:600; border:1px solid var(--paper-line); background:var(--surface); color:var(--ink); border-radius:var(--radius); cursor:pointer; }
+  .freq-toggle button.sel{ background:var(--ink); color:var(--paper); border-color:var(--ink); }
+  .modal-actions{ display:flex; justify-content:space-between; align-items:center; margin-top:22px; gap:10px; flex-wrap:wrap; }
+  .theme-toggle{ display:flex; gap:8px; }
+  .theme-toggle button{ flex:1; padding:14px; border:1px solid var(--paper-line); border-radius:var(--radius); background:var(--surface); color:var(--ink); cursor:pointer; font-family:var(--sans); font-weight:600; font-size:13px; }
+  .theme-toggle button.sel{ border:2px solid var(--ink); }
+  .archived-item{ display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--paper-line); }
+  .archived-item .habit-name{ flex:1; }
+
+  /* ---------- Toast / confetti ---------- */
+  #toast{
+    position:fixed; left:50%; bottom:88px; transform:translateX(-50%) translateY(20px);
+    background:var(--ink); color:var(--paper); font-family:var(--mono); font-size:13px;
+    padding:10px 18px; border-radius:var(--radius); opacity:0; pointer-events:none;
+    transition:opacity .25s ease, transform .25s ease; z-index:60; white-space:nowrap;
+  }
+  #toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+  .confetti{ position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:55; overflow:hidden; }
+  .confetti span{ position:absolute; top:-10px; width:8px; height:8px; border-radius:2px; animation:fall 1.4s ease-in forwards; }
+  @keyframes fall{ to{ transform:translateY(105vh) rotate(300deg); opacity:.2; } }
+
+  @media (max-width:560px){
+    .brand h1{ font-size:20px; }
+    .kpi-row{ flex-wrap:wrap; }
+    .kpi{ flex:1 1 45%; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .confetti span{ animation:none; display:none; }
+    #toast{ transition:none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="row">
+    <div class="brand">
+      <div class="kicker">RACHA<span class="grid-dot">RIO</span></div>
+      <h1 id="viewTitle">Mes</h1>
+    </div>
+    <button class="fab-add" id="btnAddTop" title="Nuevo hábito">+</button>
+  </div>
+</header>
+
+<div class="wrap" id="app"></div>
+
+<nav class="bottom" id="bottomNav">
+  <button data-view="mes">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+    Mes
+  </button>
+  <button data-view="semana">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+    Semana
+  </button>
+  <button data-view="anio">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/></svg>
+    Año
+  </button>
+  <button data-view="estadistica">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="5" y1="20" x2="5" y2="12"/><line x1="12" y1="20" x2="12" y2="6"/><line x1="19" y1="20" x2="19" y2="14"/></svg>
+    Estadística
+  </button>
+  <button data-view="config">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1 1.55V21a2 2 0 11-4 0v-.09a1.7 1.7 0 00-1-1.55 1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.7 1.7 0 004.6 15a1.7 1.7 0 00-1.55-1H3a2 2 0 110-4h.09A1.7 1.7 0 004.6 9a1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06A1.7 1.7 0 009 4.6a1.7 1.7 0 001-1.55V3a2 2 0 114 0v.09a1.7 1.7 0 001 1.55 1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06A1.7 1.7 0 0019.4 9a1.7 1.7 0 001.55 1H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.55 1z"/></svg>
+    Config.
+  </button>
+</nav>
+
+<!-- Modal nuevo/editar hábito -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h2 id="modalTitle">Nuevo hábito</h2>
+    <div class="field">
+      <label for="inpName">Nombre</label>
+      <input type="text" id="inpName" maxlength="40" placeholder="p. ej. Entrenar fuerza">
+    </div>
+    <div class="field">
+      <label>Icono</label>
+      <div class="icon-grid" id="iconGrid"></div>
+    </div>
+    <div class="field">
+      <label>Color</label>
+      <div class="color-grid" id="colorGrid"></div>
+    </div>
+    <div class="field">
+      <label>Frecuencia</label>
+      <div class="freq-toggle">
+        <button type="button" id="freqDaily" class="sel">Todos los días</button>
+        <button type="button" id="freqDays">Días concretos</button>
+      </div>
+      <div class="day-grid" id="dayGrid"></div>
+    </div>
+    <div class="field">
+      <label>Aviso (opcional)</label>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <input type="time" id="inpReminder" style="font-family:var(--sans); font-size:14px; padding:9px 10px; border:1px solid var(--paper-line); border-radius:var(--radius); background:var(--surface); color:var(--ink);">
+        <button type="button" class="btn ghost small" id="btnClearReminder">Quitar aviso</button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <div style="display:flex; gap:8px;">
+        <button class="btn ghost small" id="btnArchive" style="display:none;">Archivar</button>
+        <button class="btn danger small" id="btnDelete" style="display:none;">Eliminar</button>
+      </div>
+      <div style="display:flex; gap:8px; margin-left:auto;">
+        <button class="btn ghost" id="btnCancel">Cancelar</button>
+        <button class="btn" id="btnSave">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal copia de seguridad -->
+<div class="overlay" id="overlayBackup">
+  <div class="modal">
+    <h2>Exportar / importar hábitos</h2>
+    <p class="hint">Exporta tus hábitos a un archivo, o impórtalos desde uno anterior. Útil si cambias de navegador u ordenador.</p>
+    <div class="modal-actions">
+      <button class="btn ghost" id="btnCloseBackup">Cerrar</button>
+      <div style="display:flex; gap:8px;">
+        <button class="btn ghost" id="btnImport">Importar…</button>
+        <button class="btn" id="btnExport">Exportar</button>
+      </div>
+    </div>
+    <input type="file" id="fileImport" accept="application/json" style="display:none;">
+  </div>
+</div>
+
+<!-- Modal hábitos archivados -->
+<div class="overlay" id="overlayArchived">
+  <div class="modal">
+    <h2>Hábitos archivados</h2>
+    <p class="hint">Se guardan con todo su historial, pero no aparecen en las vistas. Puedes restaurarlos cuando quieras.</p>
+    <div id="archivedList"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="btnCloseArchived">Cerrar</button>
+      <div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal General / Acerca de -->
+<div class="overlay" id="overlayAbout">
+  <div class="modal">
+    <h2 id="aboutTitle">Acerca de</h2>
+    <p class="hint" id="aboutText"></p>
+    <div class="modal-actions">
+      <div></div>
+      <button class="btn" id="btnCloseAbout">Entendido</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  var STORAGE_KEY = "habitgrid_habits_v1";
+  var PROFILES_KEY = "habitgrid_profiles_v1";
+  var ACTIVE_PROFILE_KEY = "habitgrid_active_profile_v1";
+  var THEME_KEY = "habitgrid_theme_v1";
+  var ICON_GROUPS = [
+    {label:"Caras y emociones", icons:["😀","😃","😄","😁","😆","😅","🤣","😂","🙂","🙃","😉","😊","😇","🥰","😍","🤩","😘","😗","☺️","😚","😙","🥲","😋","😛","😜","🤪","😝","🤑","🤗","🤭","🤫","🤔","🤐","🤨","😐","😑","😶","😏","😒","🙄","😬","🤥","😌","😔","😪","🤤","😴","😷","🤒","🤕","🤢","🤮","🤧","🥵","🥶","🥴","😵","🤯","🤠","🥳","🥸","😎","🤓","🧐","😕","😟","🙁","☹️","😮","😯","😲","😳","🥺","😦","😧","😨","😰","😥","😢","😭","😱","😖","😣","😞","😓","😩","😫","🥱","😤","😡","😠","🤬","😈","👿","💀","☠️","💩","🤡","👹","👺","👻","👽","🤖","🙀"]},
+    {label:"Gestos y manos", icons:["👋","🤚","🖐️","✋","🖖","👌","🤌","🤏","✌️","🤞","🤟","🤘","🤙","👈","👉","👆","🖕","👇","☝️","👍","👎","✊","👊","🤛","🤜","👏","🙌","👐","🤲","🤝","🙏","✍️","💅","🤳","💪","🦾","🦵","🦿","🦶","👂","🦻","👃","🧠","🦷","🦴","👀","👁️","👅","👄"]},
+    {label:"Personas y actividades", icons:["👶","🧒","👦","👧","🧑","👱","👨","🧔","👩","🧓","👴","👵","🙍","🙎","🙅","🙆","💁","🙋","🧏","🙇","🤦","🤷","👮","🕵️","👷","🤴","👸","🤵","👰","🤰","🤱","👼","🎅","🦸","🦹","🧙","🧜","💆","💇","🚶","🧍","🧎","🏃","💃","🕺","🧖","🛀","🛌"]},
+    {label:"Corazones y amor", icons:["❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎","💔","❣️","💕","💞","💓","💗","💖","💘","💝","💟","💌"]},
+    {label:"Animales y naturaleza", icons:["🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🙈","🙉","🙊","🐔","🐧","🐦","🐤","🦆","🦅","🦉","🦇","🐺","🐗","🐴","🦄","🐝","🐛","🦋","🐌","🐞","🐜","🕷️","🦂","🐢","🐍","🦎","🦖","🐙","🦑","🦐","🦀","🐡","🐠","🐟","🐬","🐳","🐋","🦈","🐊","🐅","🦓","🐘","🦒","🐪","🐫","🐄","🐎","🐖","🐑","🦙","🐐","🦌","🐕","🐈","🐓","🦃","🦚","🦜","🦢","🐇","🦔","🌵","🎄","🌲","🌳","🌴","🌱","🌿","☘️","🍀","🪴","🍃","🍂","🍁","🍄","🌾","💐","🌷","🌹","🌺","🌸","🌼","🌻","🌞","🌝","🌛","🌜","🌚","🌕","🌙","🌎","🪐","💫","⭐","🌟","✨","⚡","☄️","💥","🔥","🌪️","🌈","☀️","⛅","☁️","🌧️","⛈️","❄️","☃️","⛄","💨","💧","💦","☔","🌊","🌫️"]},
+    {label:"Comida y bebida", icons:["🍏","🍎","🍐","🍊","🍋","🍌","🍉","🍇","🍓","🫐","🍈","🍒","🍑","🥭","🍍","🥥","🥝","🍅","🍆","🥑","🥦","🥬","🥒","🌶️","🌽","🥕","🧄","🧅","🥔","🍠","🥐","🥯","🍞","🥖","🧀","🥚","🍳","🥞","🧇","🥓","🥩","🍗","🍖","🌭","🍔","🍟","🍕","🥪","🌮","🌯","🥗","🍝","🍜","🍲","🍛","🍣","🍱","🥟","🍤","🍙","🍚","🍦","🍨","🍧","🥧","🧁","🍰","🎂","🍮","🍭","🍬","🍫","🍿","🍩","🍪","🌰","🥜","🍯","🥛","☕","🍵","🧃","🥤","🧋","🍶","🍺","🍷","🥂","🍾","🧊"]},
+    {label:"Deporte y actividades", icons:["⚽","🏀","🏈","⚾","🥎","🎾","🏐","🏉","🎱","🏓","🏸","🏒","🏑","🥍","🏏","🥅","⛳","🪁","🏹","🎣","🤿","🥊","🥋","🎽","🛹","🛷","⛸️","🥌","🎿","⛷️","🏂","🏋️","🤼","🤸","⛹️","🤺","🤾","🏌️","🏇","🧘","🏄","🏊","🤽","🚣","🧗","🚵","🚴","🏆","🥇","🥈","🥉","🏅","🎖️","🎗️","🎪","🎭","🩰","🎨","🎬","🎤","🎧","🎼","🎹","🥁","🎷","🎺","🎸","🎻","🎲","🎯","🎳","🎮","🧩"]},
+    {label:"Viajes y lugares", icons:["🚗","🚕","🚙","🚌","🏎️","🚓","🚑","🚒","🚐","🚚","🚲","🛵","🏍️","🚨","🚂","✈️","🛫","🛬","🚀","🛸","🚁","⛵","🚤","🚢","⚓","🚧","🚦","🗺️","🗽","🏰","🎡","🎢","⛲","🏖️","🏝️","🏜️","🌋","⛰️","🏔️","🏕️","⛺","🏠","🏡","🏢","🏥","🏦","🏨","🏫","⛪","🕌","🌅","🌄","🎆","🌇","🏙️","🌉"]},
+    {label:"Objetos", icons:["⌚","📱","💻","⌨️","🖥️","🖨️","🖱️","📷","📸","🎥","📞","☎️","📺","📻","🧭","⏱️","⏰","🕰️","⌛","⏳","🔋","🔌","💡","🔦","🕯️","💸","💵","💰","💳","🧾","💎","⚖️","🧰","🔧","🔨","⚙️","🔩","⛓️","🔫","🔪","🚬","🔮","📿","🔭","🔬","🩹","🩺","💊","💉","🧬","🌡️","🧹","🧺","🧻","🚽","🚿","🛁","🧼","🪥","🪒","🧴","🔑","🚪","🪑","🛋️","🛏️","🖼️","🪞","🛍️","🛒","🎁","🎈","🎀","🎊","🎉","🧧","✉️","📩","📦","📜","📊","📈","📉","📅","📆","🗑️","📁","📂","🗞️","📰","📓","📔","📒","📕","📗","📘","📙","📚","📖","🔖","🔗","📎","📐","📏","🧮","📌","📍","✂️","🖊️","🖋️","🖌️","📝","✏️","🔍","🔒","🔓"]},
+    {label:"Símbolos", icons:["🔴","🟠","🟡","🟢","🔵","🟣","🟤","⚫","⚪","🟥","🟧","🟨","🟩","🟦","🟪","⬛","⬜","🔶","🔷","🔸","🔹","🔺","🔻","💠","🔘","✅","❌","✔️","➕","➖","♾️","‼️","❓","❗","💯","🔆","🔅","🔱","♻️","🌐","Ⓜ️","🌀","💤","♿","ℹ️","🆗","🆕","🔢","▶️","⏸️","⏹️","⏭️","⏮️","⏩","⏪","🔼","🔽","➡️","⬅️","⬆️","⬇️","🔀","🔁","🔄","🎵","🎶"]}
+  ];
+  var ICONS = ICON_GROUPS.reduce(function(acc,g){ return acc.concat(g.icons); }, []);
+  var COLORS = ["#3e5c9a","#2f8f86","#6b8e4e","#c9971c","#c1503e","#7a4c8a","#55677a","#b4567a"];
+  var PROFILE_COLORS = ["#3e5c9a","#c1503e","#6b8e4e","#7a4c8a","#c9971c","#2f8f86"];
+  var DAY_LABELS = ["L","M","X","J","V","S","D"];
+  var DAY_LABELS_LARGAS = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+  var MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  var MESES_CORTOS = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+  var MILESTONES = [7,14,30,100,365];
+  var SETTING_COLORS = {perfil:"#3e5c9a", general:"#e0983d", tema:"#2eb8ba", fondo:"#c9567f", avisos:"#3fa66b", recordatorio:"#25d366", exportar:"#4f63d2", archivados:"#e0603d", acerca:"#8a5fc9"};
+  var BG_KEY_PREFIX = "habitgrid_bg_";
+  var BG_OPTS = {
+    paper: [
+      {label:"Papel (por defecto)", value:"#e7e4cd"},
+      {label:"Crema cálido", value:"#e6dbcb"},
+      {label:"Blanco hueso", value:"#ede9db"},
+      {label:"Gris frío", value:"#d7dde4"},
+      {label:"Gris perla", value:"#d9d9d4"},
+      {label:"Menta suave", value:"#d1e8d4"},
+      {label:"Verde salvia", value:"#d1e6cb"},
+      {label:"Azul suave", value:"#d2dce9"},
+      {label:"Azul cielo", value:"#d1dce8"},
+      {label:"Turquesa suave", value:"#cce6e2"},
+      {label:"Rosa suave", value:"#ead3dd"},
+      {label:"Rosa pastel", value:"#ebd7db"},
+      {label:"Melocotón", value:"#e7dbce"},
+      {label:"Arena", value:"#e3d9c5"},
+      {label:"Lavanda", value:"#dbd5ea"},
+      {label:"Lila", value:"#e6d1e8"},
+      {label:"Amarillo suave", value:"#e7e1ce"},
+      {label:"Beige", value:"#e3d9c6"}
+    ],
+    dark: [
+      {label:"Negro (por defecto)", value:"#131317"},
+      {label:"Gris carbón", value:"#171717"},
+      {label:"Gris pizarra", value:"#161b22"},
+      {label:"Azul noche", value:"#0f1525"},
+      {label:"Azul marino", value:"#101926"},
+      {label:"Verde bosque", value:"#0f1c16"},
+      {label:"Verde oscuro", value:"#0f2219"},
+      {label:"Teal oscuro", value:"#0d201e"},
+      {label:"Morado", value:"#190f24"},
+      {label:"Berenjena", value:"#1f0f22"},
+      {label:"Vino", value:"#220f17"},
+      {label:"Marrón café", value:"#1f110d"},
+      {label:"Terracota oscuro", value:"#20130d"},
+      {label:"Mostaza oscuro", value:"#221c10"}
+    ]
+  };
+
+  // ================= perfiles (para que varias personas usen la misma app) =================
+  function habitsKey(profileId){ return STORAGE_KEY+"__"+profileId; }
+  function loadProfiles(){
+    try{
+      var raw = localStorage.getItem(PROFILES_KEY);
+      var list = raw ? JSON.parse(raw) : null;
+      if(!Array.isArray(list) || list.length===0){
+        list = [{id:"p_default", name:"Yo", color:PROFILE_COLORS[0]}];
+        localStorage.setItem(PROFILES_KEY, JSON.stringify(list));
+        // migración: si ya había datos de una sola persona, se pasan al perfil por defecto
+        var legacy = localStorage.getItem(STORAGE_KEY);
+        if(legacy && !localStorage.getItem(habitsKey("p_default"))){
+          localStorage.setItem(habitsKey("p_default"), legacy);
+        }
+      }
+      return list;
+    }catch(e){ return [{id:"p_default", name:"Yo", color:PROFILE_COLORS[0]}]; }
+  }
+  function saveProfiles(list){ try{ localStorage.setItem(PROFILES_KEY, JSON.stringify(list)); }catch(e){} }
+  function getActiveProfileId(){
+    var id = localStorage.getItem(ACTIVE_PROFILE_KEY);
+    if(!id || !profiles.find(function(p){return p.id===id;})) id = profiles[0].id;
+    return id;
+  }
+  function setActiveProfileId(id){ localStorage.setItem(ACTIVE_PROFILE_KEY, id); activeProfileId = id; }
+  function currentProfile(){ return profiles.find(function(p){return p.id===activeProfileId;}) || profiles[0]; }
+  function switchProfile(id){ setActiveProfileId(id); habits = load(); statHabitId=null; render(); }
+  function addProfile(name){
+    var id = "p_"+Date.now();
+    var color = PROFILE_COLORS[profiles.length % PROFILE_COLORS.length];
+    profiles.push({id:id, name:name, color:color});
+    saveProfiles(profiles);
+    switchProfile(id);
+  }
+
+  var profiles = loadProfiles();
+  var activeProfileId = getActiveProfileId();
+
+  var habits = load();
+  var theme = localStorage.getItem(THEME_KEY) || "paper";
+  document.documentElement.setAttribute("data-theme", theme);
+  function bgKey(t){ return BG_KEY_PREFIX+t; }
+  function applyBg(){
+    var saved = localStorage.getItem(bgKey(theme));
+    if(saved){ document.documentElement.style.setProperty("--paper", saved); }
+    else{ document.documentElement.style.removeProperty("--paper"); }
+  }
+  applyBg();
+
+  var activeView = "mes";
+  var mesCursor = startOfMonth(new Date());
+  var anioCursor = new Date().getFullYear();
+  var statYear = new Date().getFullYear();
+  var statHabitId = null;
+
+  var editingId = null;
+  var selIcon = ICONS[0], selColor = COLORS[0], selFreq = "daily", selDays = [0,1,2,3,4,5,6], selReminder = "";
+
+  // ================= utilidades de fecha =================
+  function fmt(d){ var y=d.getFullYear(), m=("0"+(d.getMonth()+1)).slice(-2), day=("0"+d.getDate()).slice(-2); return y+"-"+m+"-"+day; }
+  function startOfDay(d){ var n=new Date(d); n.setHours(0,0,0,0); return n; }
+  function startOfMonth(d){ return new Date(d.getFullYear(), d.getMonth(), 1); }
+  function today(){ return startOfDay(new Date()); }
+  function addDays(d,n){ var r=new Date(d); r.setDate(r.getDate()+n); return r; }
+  function addMonths(d,n){ return new Date(d.getFullYear(), d.getMonth()+n, 1); }
+  function isSameDay(a,b){ return fmt(a)===fmt(b); }
+  function mondayIndex(d){ return (d.getDay()+6)%7; }
+  function mondayOf(d){ return addDays(d, -mondayIndex(d)); }
+  function daysInMonth(y,m){ return new Date(y, m+1, 0).getDate(); }
+
+  function isScheduled(h, d){
+    if(h.freq==="daily") return true;
+    return h.days.indexOf(mondayIndex(d)) !== -1;
+  }
+
+  // ================= almacenamiento =================
+  function load(){
+    try{
+      var raw = localStorage.getItem(habitsKey(activeProfileId));
+      if(!raw) return [];
+      var data = JSON.parse(raw);
+      if(!Array.isArray(data)) return [];
+      data.forEach(function(h){ h.archived = !!h.archived; if(!h.completions) h.completions={}; if(h.reminder===undefined) h.reminder=""; });
+      return data;
+    }catch(e){ return []; }
+  }
+  function save(){
+    try{ localStorage.setItem(habitsKey(activeProfileId), JSON.stringify(habits)); }
+    catch(e){ toast("No se pudo guardar (¿modo privado del navegador?)"); }
+  }
+  function activeHabits(){ return habits.filter(function(h){ return !h.archived; }); }
+
+  // ================= cálculos =================
+  function earliestCompletion(h){
+    var keys = Object.keys(h.completions).filter(function(k){ return h.completions[k]; });
+    if(keys.length===0) return today();
+    keys.sort();
+    return new Date(keys[0]+"T00:00:00");
+  }
+  function currentStreak(h){
+    var streak = 0, d = today(), guard = 0;
+    while(guard < 4000){
+      guard++;
+      if(isScheduled(h,d)){
+        var key = fmt(d);
+        if(h.completions[key]){ streak++; }
+        else if(isSameDay(d, today())){ /* hoy pendiente, no rompe */ }
+        else { break; }
+      }
+      d = addDays(d,-1);
+    }
+    return streak;
+  }
+  function bestStreak(h){
+    var d = earliestCompletion(h), best=0, run=0, end = today(), guard=0;
+    while(d <= end && guard < 4000){
+      guard++;
+      if(isScheduled(h,d)){
+        if(h.completions[fmt(d)]){ run++; if(run>best) best=run; } else { run=0; }
+      }
+      d = addDays(d,1);
+    }
+    return best;
+  }
+  function completionsInYear(h, year){
+    var n=0;
+    Object.keys(h.completions).forEach(function(k){
+      if(h.completions[k] && k.slice(0,4)===String(year)) n++;
+    });
+    return n;
+  }
+  function rateInYear(h, year){
+    var start = new Date(year,0,1), end = new Date(year,11,31);
+    var scheduled = scheduledCount(h, start, end);
+    if(scheduled===0) return 0;
+    var done = completedCount(h, start, end);
+    return (done/scheduled)*100;
+  }
+  function monthlyRates(h, year){
+    var arr = [];
+    for(var m=0; m<12; m++){
+      var ms = new Date(year,m,1), me = new Date(year,m,daysInMonth(year,m));
+      var sched = scheduledCount(h,ms,me);
+      var done = completedCount(h,ms,me);
+      arr.push({sched:sched, done:done, rate: sched===0 ? 0 : (done/sched)*100});
+    }
+    return arr;
+  }
+  function fmtPct(n){
+    var r = Math.round(n*10)/10;
+    return (r % 1 === 0 ? r.toFixed(0) : r.toFixed(1))+"%";
+  }
+  function scheduledCount(h, start, end){
+    var d=new Date(start), n=0, guard=0;
+    while(d<=end && guard<400){ if(isScheduled(h,d)) n++; d=addDays(d,1); guard++; }
+    return n;
+  }
+  function completedCount(h, start, end){
+    var n=0;
+    Object.keys(h.completions).forEach(function(k){
+      if(h.completions[k]){
+        var dt = new Date(k+"T00:00:00");
+        if(dt>=start && dt<=end) n++;
+      }
+    });
+    return n;
+  }
+  function weekMet(h, monday){
+    var sunday = addDays(monday,6);
+    var sched = scheduledCount(h, monday, sunday);
+    if(sched===0) return false;
+    return completedCount(h, monday, sunday) >= sched;
+  }
+
+  // ================= toast + confetti =================
+  var toastTimer=null;
+  function toast(msg){
+    var el = document.getElementById("toast");
+    el.textContent = msg; el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ el.classList.remove("show"); }, 2400);
+  }
+  function celebrate(color){
+    var wrap = document.createElement("div"); wrap.className="confetti";
+    for(var i=0;i<26;i++){
+      var s=document.createElement("span");
+      s.style.left=(Math.random()*100)+"vw";
+      s.style.background = Math.random()>0.5?color:"#262420";
+      s.style.animationDelay=(Math.random()*0.3)+"s";
+      s.style.animationDuration=(1+Math.random()*0.8)+"s";
+      wrap.appendChild(s);
+    }
+    document.body.appendChild(wrap);
+    setTimeout(function(){ wrap.remove(); }, 2400);
+  }
+
+  function hexAlpha(hex,a){
+    var r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+    return "rgba("+r+","+g+","+b+","+a+")";
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; });
+  }
+
+  // ================= toggle día =================
+  function toggleDay(habitId, dateStr){
+    var h = habits.find(function(x){ return x.id===habitId; });
+    if(!h) return;
+    var date = new Date(dateStr+"T00:00:00");
+    if(!isScheduled(h,date)) return;
+    var wasDone = !!h.completions[dateStr];
+    if(wasDone) delete h.completions[dateStr]; else h.completions[dateStr]=true;
+    save();
+    render();
+    if(!wasDone && dateStr===fmt(today())){
+      var streak = currentStreak(h);
+      if(MILESTONES.indexOf(streak)!==-1){ celebrate(h.color); toast("🔥 "+streak+" días de racha en \""+h.name+"\""); }
+      else toast("Anotado en \""+h.name+"\"");
+    }
+  }
+
+  // ================= construir celdas =================
+  function cellHtml(h, date, extraClass, showNum){
+    var classes = ["cell"];
+    if(extraClass) classes.push(extraClass);
+    var end = today();
+    var attrs = "";
+    var interactive = true;
+    if(!isScheduled(h,date)){ classes.push("off"); interactive=false; }
+    if(date > end){ classes.push("future"); }
+    if(interactive){
+      var key = fmt(date);
+      if(h.completions[key]){ classes.push("done"); attrs += ' style="background:'+h.color+'"'; }
+      attrs += ' data-habit="'+h.id+'" data-date="'+key+'"';
+    }
+    if(isSameDay(date,end)) classes.push("today");
+    var content = showNum ? '<span class="cell-num">'+date.getDate()+'</span>' : '';
+    return '<div class="'+classes.join(" ")+'" title="'+fmt(date)+'"'+attrs+'>'+content+'</div>';
+  }
+
+  // ================= vistas =================
+  function weekdayLabelToday(){
+    var names=["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
+    var d=new Date();
+    return "hoy es "+names[d.getDay()]+", "+d.getDate()+" de "+MESES[d.getMonth()];
+  }
+
+  function renderEmpty(){
+    return '<div class="empty"><h2>Página en blanco.</h2>'+
+      '<p>Todavía no has añadido ningún hábito. Empieza por uno solo — algo que puedas hacer hoy mismo — '+
+      'y deja que el grid se vaya llenando día a día.</p>'+
+      '<button class="btn" data-action="new-habit">+ Añadir mi primer hábito</button></div>';
+  }
+
+  function viewMes(){
+    var list = activeHabits();
+    var y = mesCursor.getFullYear(), m = mesCursor.getMonth();
+    var html = '<div class="nav-cursor">'+
+      '<button data-action="mes-prev">‹</button>'+
+      '<div class="label">'+MESES[m]+' '+y+'</div>'+
+      '<button data-action="mes-next">›</button></div>';
+
+    if(list.length===0){ return html + renderEmpty(); }
+
+    html += '<div class="today-line">'+weekdayLabelToday()+'</div>';
+
+    var doneToday=0, schedToday=0, best=0;
+    list.forEach(function(h){
+      if(isScheduled(h,today())){ schedToday++; if(h.completions[fmt(today())]) doneToday++; }
+      best = Math.max(best, bestStreak(h));
+    });
+    html += '<div class="stats">'+
+      stat(doneToday+" / "+schedToday,"hecho hoy")+
+      stat(String(list.length),"hábitos activos")+
+      stat(String(best),"mejor racha")+
+      '</div>';
+
+    list.forEach(function(h){
+      var start = mondayIndex(new Date(y,m,1));
+      var dim = daysInMonth(y,m);
+      var totalCells = Math.ceil((start+dim)/7)*7;
+      var grid = '<div class="month-grid">';
+      for(var i=0;i<totalCells;i++){
+        var dayNum = i-start+1;
+        if(dayNum<1 || dayNum>dim){ grid += '<div class="cell pad"></div>'; }
+        else{
+          var d = new Date(y,m,dayNum);
+          var wm = weekMet(h, mondayOf(d));
+          grid += cellHtml(h, d, wm ? "wk-complete" : null, true);
+        }
+      }
+      grid += '</div>';
+      var ms = new Date(y,m,1), me = new Date(y,m,dim);
+      var progreso = pill('📅', completedCount(h,ms,me)+' / '+scheduledCount(h,ms,me)+' días este mes');
+      html += habitCardWrap(h, grid, progreso);
+    });
+    return html;
+  }
+
+  function viewSemana(){
+    var list = activeHabits();
+    var monday = addDays(mondayOf(today()), 0);
+    // usamos un cursor de semana separado basado en mesCursor? usamos una var propia
+    monday = weekCursor;
+    var sunday = addDays(monday,6);
+    var html = '<div class="nav-cursor">'+
+      '<button data-action="sem-prev">‹</button>'+
+      '<div class="label">'+monday.getDate()+' '+MESES_CORTOS[monday.getMonth()]+' – '+sunday.getDate()+' '+MESES_CORTOS[sunday.getMonth()]+'</div>'+
+      '<button data-action="sem-next">›</button></div>';
+
+    if(list.length===0){ return html + renderEmpty(); }
+
+    list.forEach(function(h){
+      var wm = weekMet(h, monday);
+      var days = '<div class="week-days">'+DAY_LABELS_LARGAS.map(function(l){return '<span>'+l+'</span>';}).join("")+'</div>';
+      var cells = '<div class="week-grid">';
+      for(var i=0;i<7;i++){ cells += cellHtml(h, addDays(monday,i), wm ? "wk-complete" : null, true); }
+      cells += '</div>';
+      var progreso = pill('📅', completedCount(h,monday,sunday)+' / '+scheduledCount(h,monday,sunday)+' días esta semana');
+      var trofeo = wm ? pill('🏆','¡Semana completa!') : '';
+      html += habitCardWrap(h, days+cells, progreso+trofeo);
+    });
+    return html;
+  }
+
+  function monthMiniGrid(h, year, m){
+    var start = mondayIndex(new Date(year,m,1));
+    var dim = daysInMonth(year,m);
+    var totalCells = Math.ceil((start+dim)/7)*7;
+    var grid = '<div class="month-grid year-mini-grid">';
+    for(var i=0;i<totalCells;i++){
+      var dayNum = i-start+1;
+      if(dayNum<1 || dayNum>dim){ grid += '<div class="cell pad"></div>'; }
+      else{
+        var d = new Date(year,m,dayNum);
+        var wm = weekMet(h, mondayOf(d));
+        grid += cellHtml(h, d, wm ? "wk-complete" : null, true);
+      }
+    }
+    grid += '</div>';
+    return grid;
+  }
+
+  function yearCalendarHtml(h, year){
+    var html = '<div class="year-grid">';
+    for(var m=0; m<12; m++){
+      html += '<div class="year-month-card"><div class="year-month-title">'+MESES[m]+'</div>'+monthMiniGrid(h,year,m)+'</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function heatmapHtml(h, year){
+    var jan1 = new Date(year,0,1), dec31 = new Date(year,11,31);
+    var start = mondayOf(jan1);
+    var weeks = Math.ceil((( (dec31-start) / 86400000 )+1)/7);
+    var monthsRow = '', cols='';
+    var lastMonth=-1;
+    for(var w=0; w<weeks; w++){
+      var colStart = addDays(start, w*7);
+      var lbl = "";
+      var isNewMonth = false;
+      if(colStart.getMonth()!==lastMonth && colStart <= dec31 && colStart.getDate()<=7){
+        lbl = MESES_CORTOS[colStart.getMonth()];
+        lastMonth = colStart.getMonth();
+        isNewMonth = (w>0);
+      }
+      monthsRow += '<span'+(isNewMonth?' class="month-start"':'')+'>'+lbl+'</span>';
+      var wm = weekMet(h, colStart);
+      var col = '<div class="heat-week'+(wm?" hw-complete":"")+(isNewMonth?" month-start":"")+'">';
+      for(var d=0; d<7; d++){
+        var date = addDays(colStart, d);
+        if(date < jan1 || date > dec31){ col += '<div class="cell pad" style="width:16px;height:16px;"></div>'; }
+        else{ col += cellHtml(h, date, null, true); }
+      }
+      col += '</div>';
+      cols += col;
+    }
+    return '<div class="heat-scroll"><div class="heat-months">'+monthsRow+'</div><div class="heat-cols">'+cols+'</div></div>';
+  }
+
+  function viewAnio(){
+    var list = activeHabits();
+    var html = '<div class="nav-cursor">'+
+      '<button data-action="anio-prev">‹</button>'+
+      '<div class="label">'+anioCursor+'</div>'+
+      '<button data-action="anio-next">›</button></div>';
+    if(list.length===0){ return html + renderEmpty(); }
+    list.forEach(function(h){
+      var ys = new Date(anioCursor,0,1), ye = new Date(anioCursor,11,31);
+      var progreso = pill('📅', completedCount(h,ys,ye)+' / '+scheduledCount(h,ys,ye)+' días este año');
+      html += habitCardWrap(h, yearCalendarHtml(h, anioCursor), progreso);
+    });
+    return html;
+  }
+
+  function viewEstadistica(){
+    var list = activeHabits();
+    if(list.length===0){
+      return '<div class="nav-cursor"><div class="label">Estadística</div></div>' + renderEmpty();
+    }
+    if(!statHabitId || !list.find(function(h){return h.id===statHabitId;})) statHabitId = list[0].id;
+    var h = list.find(function(x){ return x.id===statHabitId; });
+
+    var opts = list.map(function(x){
+      return '<option value="'+x.id+'"'+(x.id===statHabitId?' selected':'')+'>'+x.icon+' '+escapeHtml(x.name)+'</option>';
+    }).join("");
+
+    var html = '<select class="stat-select" id="statHabitSelect">'+opts+'</select>';
+    html += '<div class="nav-cursor">'+
+      '<button data-action="stat-prev">‹</button>'+
+      '<div class="label">'+statYear+'</div>'+
+      '<button data-action="stat-next">›</button></div>';
+    html += heatmapHtml(h, statYear);
+
+    var dias = completionsInYear(h, statYear);
+    var tasa = rateInYear(h, statYear);
+    html += '<div class="kpi-row">'+
+      '<div class="kpi"><div class="icon" style="background:'+h.color+'">#</div><div class="num">'+dias+'</div><div class="lbl">Días completados</div></div>'+
+      '<div class="kpi"><div class="icon" style="background:'+h.color+'">%</div><div class="num">'+fmtPct(tasa)+'</div><div class="lbl">Tasa de finalización</div></div>'+
+      '</div>';
+
+    var meses = monthlyRates(h, statYear);
+    html += '<div class="section-title">Completados mensuales</div>';
+    html += '<div class="barchart">';
+    meses.forEach(function(md,i){
+      html += '<div class="bar-col"><div class="bar" style="height:'+Math.max(md.rate,2)+'%; background:'+h.color+'" title="'+md.done+' / '+md.sched+' días">'+
+        '<span class="bar-pct">'+fmtPct(md.rate)+'</span>'+
+        '</div><div class="bar-lbl">'+MESES_CORTOS[i]+'</div></div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function viewConfig(){
+    var html = '<div class="settings-list">';
+    html += settingRow("perfil","👤","Perfil", currentProfile().name);
+    html += settingRow("general","⚙️","General","Sin cuenta · todo local");
+    html += settingRow("tema","🎨","Tema", theme==="dark" ? "Oscuro" : "Claro");
+    html += settingRow("fondo","🖌️","Color de fondo","");
+    html += settingRow("avisos","🔔","Avisos del navegador", (typeof Notification!=="undefined" && Notification.permission==="granted") ? "Activados" : "Desactivados");
+    html += settingRow("recordatorio","💬","Enviar recordatorio","");
+    html += settingRow("exportar","🔄","Exportar / importar hábitos","");
+    html += settingRow("archivados","🗄️","Hábitos archivados", habits.filter(function(h){return h.archived;}).length+"");
+    html += settingRow("acerca","ℹ️","Acerca de","");
+    html += '</div>';
+    return html;
+  }
+  function settingRow(action, icon, label, value){
+    return '<button class="setting-row" data-action="setting-'+action+'">'+
+      '<div class="setting-icon" style="background:'+SETTING_COLORS[action]+'">'+icon+'</div>'+
+      '<div class="setting-label">'+label+'</div>'+
+      (value?'<div class="setting-value">'+escapeHtml(value)+'</div>':'')+
+      '<div class="setting-chev">›</div></button>';
+  }
+
+  function habitCardWrap(h, inner, progressPill){
+    var reminderPill = h.reminder ? pill('⏰', h.reminder) : '';
+    return '<div class="habit-card" style="--wk-color:'+h.color+';">'+
+      '<div class="habit-head">'+
+        '<div class="habit-id">'+
+          '<div class="habit-icon" style="background:'+hexAlpha(h.color,0.22)+';">'+h.icon+'</div>'+
+          '<div><div class="habit-name">'+escapeHtml(h.name)+'</div>'+
+          '<div class="habit-sub">'+(h.freq==="daily"?"todos los días":h.days.map(function(i){return DAY_LABELS[i];}).join(" · "))+'</div></div>'+
+        '</div>'+
+        '<div class="habit-right">'+
+          '<div class="flame">🔥 '+currentStreak(h)+'</div>'+
+          '<button class="icon-btn" data-action="edit-habit" data-id="'+h.id+'">✎</button>'+
+        '</div>'+
+      '</div>'+
+      (progressPill||reminderPill ? '<div class="habit-badges">'+(progressPill||'')+reminderPill+'</div>' : '')+
+      inner+'</div>';
+  }
+  function pill(icon,text){ return '<div class="pill">'+icon+' '+text+'</div>'; }
+  function stat(num,lbl){ return '<div class="stat"><div class="num">'+num+'</div><div class="lbl">'+lbl+'</div></div>'; }
+
+  // ================= render principal =================
+  var TITLES = {mes:"Mes", semana:"Semana", anio:"Año", estadistica:"Estadística", config:"Configuración"};
+  var weekCursor = mondayOf(today());
+
+  function render(){
+    document.getElementById("viewTitle").textContent = TITLES[activeView];
+    document.getElementById("btnAddTop").style.display = (activeView==="config") ? "none" : "flex";
+
+    var app = document.getElementById("app");
+    if(activeView==="mes") app.innerHTML = viewMes();
+    else if(activeView==="semana") app.innerHTML = viewSemana();
+    else if(activeView==="anio") app.innerHTML = viewAnio();
+    else if(activeView==="estadistica") app.innerHTML = viewEstadistica();
+    else app.innerHTML = viewConfig();
+
+    document.querySelectorAll("#bottomNav button").forEach(function(b){
+      b.classList.toggle("active", b.getAttribute("data-view")===activeView);
+    });
+
+    // llevar el mapa de calor a la casilla de hoy (si existe), en vez de forzar el final
+    document.querySelectorAll(".heat-scroll").forEach(function(el){
+      var todayCell = el.querySelector(".cell.today");
+      if(todayCell){ todayCell.scrollIntoView({inline:"end", block:"nearest"}); }
+      else{ el.scrollLeft = 0; }
+    });
+  }
+
+  // ================= delegación de eventos =================
+  document.getElementById("bottomNav").addEventListener("click", function(e){
+    var btn = e.target.closest("button[data-view]");
+    if(!btn) return;
+    activeView = btn.getAttribute("data-view");
+    render();
+  });
+
+  document.getElementById("app").addEventListener("click", function(e){
+    var cell = e.target.closest(".cell[data-date]");
+    if(cell){ toggleDay(cell.getAttribute("data-habit"), cell.getAttribute("data-date")); return; }
+
+    var act = e.target.closest("[data-action]");
+    if(!act) return;
+    var a = act.getAttribute("data-action");
+
+    if(a==="new-habit") openModal(null);
+    else if(a==="edit-habit") openModal(act.getAttribute("data-id"));
+    else if(a==="mes-prev"){ mesCursor = addMonths(mesCursor,-1); render(); }
+    else if(a==="mes-next"){ mesCursor = addMonths(mesCursor,1); render(); }
+    else if(a==="sem-prev"){ weekCursor = addDays(weekCursor,-7); render(); }
+    else if(a==="sem-next"){ weekCursor = addDays(weekCursor,7); render(); }
+    else if(a==="anio-prev"){ anioCursor--; render(); }
+    else if(a==="anio-next"){ anioCursor++; render(); }
+    else if(a==="stat-prev"){ statYear--; render(); }
+    else if(a==="stat-next"){ statYear++; render(); }
+    else if(a==="setting-perfil") openProfileModal();
+    else if(a==="setting-general") openAbout("General","Rachario funciona sin cuentas ni conexión a internet: todo lo que registras se guarda solo en este navegador, en este archivo.");
+    else if(a==="setting-tema") openThemeModal();
+    else if(a==="setting-fondo") openBgModal();
+    else if(a==="setting-avisos") openNotifModal();
+    else if(a==="setting-recordatorio") openReminderModal();
+    else if(a==="setting-exportar") document.getElementById("overlayBackup").classList.add("open");
+    else if(a==="setting-archivados") openArchivedModal();
+    else if(a==="setting-acerca") openAbout("Acerca de","Rachario — inspirado en HabitGrid, hecho a medida. Sin anuncios, sin cuentas, sin nube: tus datos son solo tuyos. Usa \"Exportar hábitos\" de vez en cuando como copia de seguridad.");
+  });
+
+  document.getElementById("app").addEventListener("change", function(e){
+    if(e.target.id==="statHabitSelect"){ statHabitId = e.target.value; render(); }
+  });
+
+  document.getElementById("btnAddTop").addEventListener("click", function(){ openModal(null); });
+
+  // ================= modal alta / edición =================
+  var overlay = document.getElementById("overlay");
+  var iconGrid = document.getElementById("iconGrid");
+  var colorGrid = document.getElementById("colorGrid");
+  var dayGrid = document.getElementById("dayGrid");
+
+  ICON_GROUPS.forEach(function(group){
+    var header = document.createElement("div");
+    header.className = "icon-group-label";
+    header.textContent = group.label;
+    iconGrid.appendChild(header);
+    var row = document.createElement("div");
+    row.className = "icon-group-row";
+    group.icons.forEach(function(ic){
+      var b = document.createElement("button");
+      b.type="button"; b.className="icon-opt"; b.textContent=ic;
+      b.addEventListener("click", function(){
+        selIcon=ic;
+        iconGrid.querySelectorAll(".icon-opt").forEach(function(x){x.classList.remove("sel");});
+        b.classList.add("sel");
+      });
+      row.appendChild(b);
+    });
+    iconGrid.appendChild(row);
+  });
+  COLORS.forEach(function(c){
+    var b = document.createElement("button");
+    b.type="button"; b.className="color-opt"; b.style.background=c; b.setAttribute("data-hex",c);
+    b.addEventListener("click", function(){
+      selColor=c;
+      colorGrid.querySelectorAll(".color-opt").forEach(function(x){x.classList.remove("sel");});
+      b.classList.add("sel");
+    });
+    colorGrid.appendChild(b);
+  });
+  DAY_LABELS.forEach(function(lbl, idx){
+    var b = document.createElement("button");
+    b.type="button"; b.className="day-opt"; b.textContent=lbl;
+    b.addEventListener("click", function(){
+      var pos = selDays.indexOf(idx);
+      if(pos===-1) selDays.push(idx); else selDays.splice(pos,1);
+      syncDayButtons();
+    });
+    dayGrid.appendChild(b);
+  });
+  function syncDayButtons(){
+    dayGrid.querySelectorAll(".day-opt").forEach(function(b,idx){ b.classList.toggle("sel", selDays.indexOf(idx)!==-1); });
+  }
+  document.getElementById("freqDaily").addEventListener("click", function(){
+    selFreq="daily"; this.classList.add("sel");
+    document.getElementById("freqDays").classList.remove("sel");
+    dayGrid.style.display="none";
+  });
+  document.getElementById("freqDays").addEventListener("click", function(){
+    selFreq="days"; this.classList.add("sel");
+    document.getElementById("freqDaily").classList.remove("sel");
+    dayGrid.style.display="flex";
+  });
+
+  function openModal(id){
+    editingId = id || null;
+    var h = editingId ? habits.find(function(x){return x.id===editingId;}) : null;
+    document.getElementById("modalTitle").textContent = h ? "Editar hábito" : "Nuevo hábito";
+    document.getElementById("btnDelete").style.display = h ? "inline-block" : "none";
+    document.getElementById("btnArchive").style.display = h ? "inline-block" : "none";
+    document.getElementById("btnArchive").textContent = (h && h.archived) ? "Restaurar" : "Archivar";
+    document.getElementById("inpName").value = h ? h.name : "";
+    document.getElementById("inpReminder").value = h ? (h.reminder||"") : "";
+
+    selIcon = h ? h.icon : ICONS[0];
+    selColor = h ? h.color : COLORS[0];
+    selFreq = h ? h.freq : "daily";
+    selDays = h ? h.days.slice() : [0,1,2,3,4,5,6];
+
+    iconGrid.querySelectorAll(".icon-opt").forEach(function(b){ b.classList.toggle("sel", b.textContent===selIcon); });
+    colorGrid.querySelectorAll(".color-opt").forEach(function(b){ b.classList.toggle("sel", b.getAttribute("data-hex")===selColor); });
+    document.getElementById("freqDaily").classList.toggle("sel", selFreq==="daily");
+    document.getElementById("freqDays").classList.toggle("sel", selFreq==="days");
+    dayGrid.style.display = selFreq==="days" ? "flex" : "none";
+    syncDayButtons();
+
+    overlay.classList.add("open");
+    setTimeout(function(){ document.getElementById("inpName").focus(); }, 30);
+  }
+  document.getElementById("btnClearReminder").addEventListener("click", function(){ document.getElementById("inpReminder").value = ""; });
+  function closeModal(){ overlay.classList.remove("open"); editingId=null; }
+  document.getElementById("btnCancel").addEventListener("click", closeModal);
+  overlay.addEventListener("click", function(e){ if(e.target===overlay) closeModal(); });
+
+  document.getElementById("btnSave").addEventListener("click", function(){
+    var name = document.getElementById("inpName").value.trim();
+    if(!name){ toast("Ponle un nombre al hábito"); return; }
+    if(selFreq==="days" && selDays.length===0){ toast("Elige al menos un día"); return; }
+    var reminder = document.getElementById("inpReminder").value || "";
+    if(reminder) ensureNotifPermission();
+
+    if(editingId){
+      var h = habits.find(function(x){return x.id===editingId;});
+      h.name=name; h.icon=selIcon; h.color=selColor; h.freq=selFreq;
+      h.days = selFreq==="days" ? selDays.slice().sort() : [0,1,2,3,4,5,6];
+      h.reminder = reminder;
+    } else {
+      habits.push({
+        id:"h_"+Date.now()+"_"+Math.floor(Math.random()*1000),
+        name:name, icon:selIcon, color:selColor, freq:selFreq,
+        days: selFreq==="days" ? selDays.slice().sort() : [0,1,2,3,4,5,6],
+        createdAt:new Date().toISOString(), completions:{}, archived:false, reminder:reminder
+      });
+    }
+    save(); closeModal(); render();
+  });
+
+  document.getElementById("btnDelete").addEventListener("click", function(){
+    if(!editingId) return;
+    var h = habits.find(function(x){return x.id===editingId;});
+    if(confirm('¿Eliminar "'+h.name+'" y todo su historial? No se puede deshacer.')){
+      habits = habits.filter(function(x){return x.id!==editingId;});
+      save(); closeModal(); render();
+    }
+  });
+  document.getElementById("btnArchive").addEventListener("click", function(){
+    if(!editingId) return;
+    var h = habits.find(function(x){return x.id===editingId;});
+    h.archived = !h.archived;
+    save(); closeModal(); render();
+    toast(h.archived ? 'Archivado "'+h.name+'"' : 'Restaurado "'+h.name+'"');
+  });
+
+  // ================= backup =================
+  var overlayBackup = document.getElementById("overlayBackup");
+  document.getElementById("btnCloseBackup").addEventListener("click", function(){ overlayBackup.classList.remove("open"); });
+  overlayBackup.addEventListener("click", function(e){ if(e.target===overlayBackup) overlayBackup.classList.remove("open"); });
+  document.getElementById("btnExport").addEventListener("click", function(){
+    var blob = new Blob([JSON.stringify(habits,null,2)], {type:"application/json"});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href=url; a.download="habitgrid_backup_"+fmt(today())+".json";
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast("Copia de seguridad descargada");
+  });
+  document.getElementById("btnImport").addEventListener("click", function(){ document.getElementById("fileImport").click(); });
+  document.getElementById("fileImport").addEventListener("change", function(e){
+    var file = e.target.files[0];
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      try{
+        var data = JSON.parse(reader.result);
+        if(!Array.isArray(data)) throw new Error("formato inválido");
+        if(habits.length>0 && !confirm("Esto reemplazará tus "+habits.length+" hábitos actuales por los del archivo. ¿Continuar?")) return;
+        data.forEach(function(h){ h.archived=!!h.archived; if(!h.completions) h.completions={}; });
+        habits = data;
+        save(); render();
+        overlayBackup.classList.remove("open");
+        toast("Datos importados");
+      }catch(err){ toast("El archivo no es una copia de seguridad válida"); }
+    };
+    reader.readAsText(file);
+    e.target.value="";
+  });
+
+  // ================= hábitos archivados =================
+  var overlayArchived = document.getElementById("overlayArchived");
+  document.getElementById("btnCloseArchived").addEventListener("click", function(){ overlayArchived.classList.remove("open"); });
+  overlayArchived.addEventListener("click", function(e){ if(e.target===overlayArchived) overlayArchived.classList.remove("open"); });
+  function openArchivedModal(){
+    var list = habits.filter(function(h){return h.archived;});
+    var el = document.getElementById("archivedList");
+    if(list.length===0){
+      el.innerHTML = '<p class="hint">No tienes hábitos archivados.</p>';
+    } else {
+      el.innerHTML = list.map(function(h){
+        return '<div class="archived-item">'+
+          '<div class="habit-icon" style="background:'+hexAlpha(h.color,0.22)+'; width:30px; height:30px; font-size:15px;">'+h.icon+'</div>'+
+          '<div class="habit-name">'+escapeHtml(h.name)+'</div>'+
+          '<button class="btn ghost small" data-restore="'+h.id+'">Restaurar</button></div>';
+      }).join("");
+      el.querySelectorAll("[data-restore]").forEach(function(btn){
+        btn.addEventListener("click", function(){
+          var h = habits.find(function(x){return x.id===btn.getAttribute("data-restore");});
+          h.archived=false; save(); render(); openArchivedModal();
+          toast('Restaurado "'+h.name+'"');
+        });
+      });
+    }
+    overlayArchived.classList.add("open");
+  }
+
+  // ================= tema =================
+  function openThemeModal(){
+    var wrap = document.createElement("div");
+    document.getElementById("overlayAbout").querySelector(".modal").setAttribute("data-theme-modal","1");
+    document.getElementById("aboutTitle").textContent = "Tema";
+    document.getElementById("aboutText").innerHTML =
+      '<div class="theme-toggle" style="margin-top:6px;">'+
+      '<button type="button" data-theme-opt="paper" class="'+(theme==="paper"?"sel":"")+'">☀️ Claro</button>'+
+      '<button type="button" data-theme-opt="dark" class="'+(theme==="dark"?"sel":"")+'">🌙 Oscuro</button>'+
+      '</div>';
+    document.getElementById("overlayAbout").classList.add("open");
+    document.getElementById("aboutText").querySelectorAll("[data-theme-opt]").forEach(function(b){
+      b.addEventListener("click", function(){
+        theme = b.getAttribute("data-theme-opt");
+        localStorage.setItem(THEME_KEY, theme);
+        document.documentElement.setAttribute("data-theme", theme);
+        applyBg();
+        document.getElementById("aboutText").querySelectorAll("[data-theme-opt]").forEach(function(x){x.classList.remove("sel");});
+        b.classList.add("sel");
+        render();
+      });
+    });
+  }
+  function openBgModal(){
+    var opts = BG_OPTS[theme];
+    var current = localStorage.getItem(bgKey(theme)) || opts[0].value;
+    document.getElementById("aboutTitle").textContent = "Color de fondo";
+    document.getElementById("aboutText").innerHTML =
+      '<p class="hint" style="margin-top:0;">Elige el tono de fondo para el tema '+(theme==="dark"?"oscuro":"claro")+'. Cada tema recuerda su propio color.</p>'+
+      '<div class="color-grid" id="bgColorGrid">'+
+      opts.map(function(o){
+        return '<button type="button" class="color-opt'+(o.value===current?' sel':'')+'" data-bg="'+o.value+'" title="'+o.label+'" style="background:'+o.value+'; border:1px solid var(--paper-line);"></button>';
+      }).join("")+
+      '</div>';
+    document.getElementById("overlayAbout").classList.add("open");
+    document.getElementById("bgColorGrid").querySelectorAll("[data-bg]").forEach(function(b){
+      b.addEventListener("click", function(){
+        var v = b.getAttribute("data-bg");
+        localStorage.setItem(bgKey(theme), v);
+        applyBg();
+        document.getElementById("bgColorGrid").querySelectorAll("[data-bg]").forEach(function(x){x.classList.remove("sel");});
+        b.classList.add("sel");
+      });
+    });
+  }
+  function openProfileModal(){
+    var renamingId = null;
+    function draw(){
+      var rows = profiles.map(function(p){
+        var isActive = p.id===activeProfileId;
+        if(p.id===renamingId){
+          return '<div class="archived-item">'+
+            '<input type="text" id="inpRenameProfile" maxlength="24" value="'+escapeHtml(p.name)+'" style="flex:1; font-family:var(--sans); font-size:14px; padding:8px 10px; border:1px solid var(--paper-line); border-radius:var(--radius); background:var(--surface); color:var(--ink);">'+
+            '<button class="btn small" data-save-rename="'+p.id+'">Guardar</button>'+
+          '</div>';
+        }
+        return '<div class="archived-item">'+
+          '<div class="habit-icon" style="background:'+hexAlpha(p.color||PROFILE_COLORS[0],0.22)+'; width:30px; height:30px; font-size:14px;">'+(p.name?p.name.charAt(0).toUpperCase():"?")+'</div>'+
+          '<div class="habit-name">'+escapeHtml(p.name)+(isActive?' · <span style="color:var(--accent);">activo</span>':'')+'</div>'+
+          '<button class="icon-btn" data-rename-profile="'+p.id+'" title="Renombrar">✎</button>'+
+          (isActive ? '' : '<button class="btn ghost small" data-switch-profile="'+p.id+'">Cambiar</button>')+
+        '</div>';
+      }).join("");
+      document.getElementById("aboutTitle").textContent = "Perfil";
+      document.getElementById("aboutText").innerHTML =
+        '<p class="hint" style="margin-top:0;">Cada perfil tiene sus propios hábitos y su propio registro, totalmente separados. Útil si compartís el mismo dispositivo. Toca ✎ para ponerle el nombre que quieras.</p>'+
+        rows+
+        '<div class="field" style="margin-top:16px;">'+
+          '<label>Nuevo perfil</label>'+
+          '<div style="display:flex; gap:8px;">'+
+            '<input type="text" id="inpNewProfile" maxlength="24" placeholder="p. ej. Novia" style="flex:1; font-family:var(--sans); font-size:14px; padding:9px 10px; border:1px solid var(--paper-line); border-radius:var(--radius); background:var(--surface); color:var(--ink);">'+
+            '<button class="btn small" id="btnAddProfile">Añadir</button>'+
+          '</div>'+
+        '</div>';
+      document.getElementById("overlayAbout").classList.add("open");
+
+      document.getElementById("aboutText").querySelectorAll("[data-switch-profile]").forEach(function(b){
+        b.addEventListener("click", function(){
+          var id = b.getAttribute("data-switch-profile");
+          switchProfile(id);
+          document.getElementById("overlayAbout").classList.remove("open");
+          toast("Perfil activo: "+currentProfile().name);
+        });
+      });
+      document.getElementById("aboutText").querySelectorAll("[data-rename-profile]").forEach(function(b){
+        b.addEventListener("click", function(){
+          renamingId = b.getAttribute("data-rename-profile");
+          draw();
+          var inp = document.getElementById("inpRenameProfile");
+          if(inp){ inp.focus(); inp.select(); }
+        });
+      });
+      var saveBtn = document.querySelector("[data-save-rename]");
+      if(saveBtn){
+        saveBtn.addEventListener("click", function(){
+          var id = saveBtn.getAttribute("data-save-rename");
+          var newName = document.getElementById("inpRenameProfile").value.trim();
+          if(!newName){ toast("Ponle un nombre al perfil"); return; }
+          var p = profiles.find(function(x){return x.id===id;});
+          p.name = newName;
+          saveProfiles(profiles);
+          renamingId = null;
+          draw();
+          render();
+          toast("Perfil renombrado");
+        });
+      }
+      document.getElementById("btnAddProfile").addEventListener("click", function(){
+        var name = document.getElementById("inpNewProfile").value.trim();
+        if(!name){ toast("Ponle un nombre al perfil"); return; }
+        addProfile(name);
+        document.getElementById("overlayAbout").classList.remove("open");
+        toast("Perfil creado: "+name);
+      });
+    }
+    draw();
+  }
+
+  function ensureNotifPermission(){
+    if(typeof Notification==="undefined") return;
+    if(Notification.permission==="default"){ Notification.requestPermission(); }
+  }
+  function openReminderModal(){
+    var MSG_KEY = "habitgrid_nudge_msg_v1";
+    var saved = localStorage.getItem(MSG_KEY);
+    var defaultMsg = "¡Ey! 👋 Recuerda hacer tus hábitos de hoy en Rachario 💪🔥 ¡Que no se rompa la racha!";
+    var msg = saved || defaultMsg;
+    document.getElementById("aboutTitle").textContent = "Enviar recordatorio";
+    document.getElementById("aboutText").innerHTML =
+      '<p class="hint" style="margin-top:0;">Esto NO manda un aviso automático al móvil de la otra persona — eso necesitaría un servidor propio, y de momento no lo tenemos. '+
+      'Lo que sí hace es abrirte WhatsApp (o la app que elijas) con el mensaje ya escrito, listo para enviar en un toque.</p>'+
+      '<div class="field">'+
+        '<label>Mensaje</label>'+
+        '<textarea id="inpNudgeMsg" rows="3" maxlength="300" style="width:100%; font-family:var(--sans); font-size:14px; padding:10px 12px; border:1px solid var(--paper-line); border-radius:var(--radius); background:var(--surface); color:var(--ink); resize:vertical;">'+escapeHtml(msg)+'</textarea>'+
+      '</div>'+
+      '<div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">'+
+        (typeof navigator.share==="function" ? '<button class="btn ghost small" id="btnShareNudge">Compartir…</button>' : '')+
+        '<button class="btn small" id="btnWhatsappNudge">Enviar por WhatsApp</button>'+
+      '</div>';
+    document.getElementById("overlayAbout").classList.add("open");
+
+    document.getElementById("btnWhatsappNudge").addEventListener("click", function(){
+      var text = document.getElementById("inpNudgeMsg").value.trim();
+      if(!text){ toast("Escribe un mensaje primero"); return; }
+      localStorage.setItem(MSG_KEY, text);
+      window.open("https://wa.me/?text="+encodeURIComponent(text), "_blank");
+    });
+    var shareBtn = document.getElementById("btnShareNudge");
+    if(shareBtn){
+      shareBtn.addEventListener("click", function(){
+        var text = document.getElementById("inpNudgeMsg").value.trim();
+        if(!text){ toast("Escribe un mensaje primero"); return; }
+        localStorage.setItem(MSG_KEY, text);
+        navigator.share({text:text}).catch(function(){});
+      });
+    }
+  }
+
+  function openNotifModal(){
+    var supported = typeof Notification!=="undefined";
+    var status = !supported ? "Tu navegador no soporta avisos." :
+      Notification.permission==="granted" ? "Activados ✅" :
+      Notification.permission==="denied" ? "Bloqueados en el navegador (revisa los permisos del sitio)" : "Aún no activados";
+    document.getElementById("aboutTitle").textContent = "Avisos del navegador";
+    document.getElementById("aboutText").innerHTML =
+      '<p class="hint" style="margin-top:0;">Ponle una hora a un hábito (al editarlo) y, mientras tengas esta pestaña abierta en el navegador, '+
+      'te avisará ese día a esa hora si aún no lo has marcado. Puede estar en segundo plano, pero si cierras el navegador del todo, no llegará el aviso.</p>'+
+      '<p class="hint"><strong>Estado:</strong> '+status+'</p>'+
+      (supported && Notification.permission==="default" ? '<button class="btn" id="btnEnableNotif">Activar avisos</button>' : '');
+    document.getElementById("overlayAbout").classList.add("open");
+    var btn = document.getElementById("btnEnableNotif");
+    if(btn){
+      btn.addEventListener("click", function(){
+        Notification.requestPermission().then(function(){ openNotifModal(); render(); });
+      });
+    }
+  }
+
+  var notifiedKeys = {};
+  function checkReminders(){
+    var now = new Date();
+    var nowStr = ("0"+now.getHours()).slice(-2)+":"+("0"+now.getMinutes()).slice(-2);
+    activeHabits().forEach(function(h){
+      if(!h.reminder || h.reminder!==nowStr) return;
+      if(!isScheduled(h, today())) return;
+      if(h.completions[fmt(today())]) return;
+      var key = h.id+"|"+fmt(today())+"|"+nowStr;
+      if(notifiedKeys[key]) return;
+      notifiedKeys[key] = true;
+      if(typeof Notification!=="undefined" && Notification.permission==="granted"){
+        try{ new Notification(h.icon+" "+h.name, {body:"Aún no lo has marcado hoy.", tag:h.id}); }catch(e){}
+      }
+      toast("⏰ Hora de: "+h.name);
+    });
+  }
+  setInterval(checkReminders, 20000);
+
+  function openAbout(title, text){
+    document.getElementById("aboutTitle").textContent = title;
+    document.getElementById("aboutText").textContent = text;
+    document.getElementById("overlayAbout").classList.add("open");
+  }
+  document.getElementById("btnCloseAbout").addEventListener("click", function(){ document.getElementById("overlayAbout").classList.remove("open"); });
+  document.getElementById("overlayAbout").addEventListener("click", function(e){ if(e.target===document.getElementById("overlayAbout")) document.getElementById("overlayAbout").classList.remove("open"); });
+
+  // ================= init =================
+  render();
+
+  // Funciona sin conexión si el archivo está alojado en un sitio real (junto a sw.js).
+  // En file:// o dentro del artefacto de Claude, esto simplemente no hace nada (fallo silencioso).
+  if("serviceWorker" in navigator && (location.protocol==="https:" || location.protocol==="http:")){
+    window.addEventListener("load", function(){
+      navigator.serviceWorker.register("./sw.js").catch(function(){ /* no disponible aquí, no pasa nada */ });
+    });
+  }
+
+})();
+</script>
+</body>
+</html>
+
+</body></html>
