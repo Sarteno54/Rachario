@@ -333,6 +333,13 @@
   .wrapped-hl-val{ font-size:16px; font-weight:700; margin-top:3px; }
   .wrapped-brand{ font-family:var(--mono); font-size:12px; color:#cbb9ab; margin-top:16px; letter-spacing:.08em; }
 
+  /* ---------- Sincronización ---------- */
+  .sync-code{
+    font-family:var(--mono); font-weight:700; font-size:26px; letter-spacing:.12em;
+    text-align:center; padding:16px; border-radius:12px; border:1.5px dashed var(--paper-line);
+    background:var(--surface); color:var(--ink); margin-top:10px;
+  }
+
   /* ---------- Reordenar hábitos ---------- */
   #reorderList{ display:flex; flex-direction:column; gap:8px; }
   .reorder-row{
@@ -643,30 +650,9 @@
 
 <div id="toast"></div>
 
-<script type="module">
-  // Import the functions you need from the SDKs you need
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/13.0.0/firebase-analytics.js";
-  // TODO: Add SDKs for Firebase products that you want to use
-  // https://firebase.google.com/docs/web/setup#available-libraries
-
-  // Your web app's Firebase configuration
-  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-  const firebaseConfig = {
-    apiKey: "AIzaSyCEjfD8vijSgdu38mDyREfLb5d2zJqRnqw",
-    authDomain: "rachario.firebaseapp.com",
-    projectId: "rachario",
-    storageBucket: "rachario.firebasestorage.app",
-    messagingSenderId: "167576402415",
-    appId: "1:167576402415:web:5678e013fa9e5180889e1a",
-    measurementId: "G-2NC3WZGHZK"
-  };
-
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  const analytics = getAnalytics(app);
-</script>
-
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script>
 (function(){
   "use strict";
@@ -703,7 +689,7 @@
   var MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
   var MESES_CORTOS = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
   var MILESTONES = [7,14,30,100,365];
-  var SETTING_COLORS = {perfil:"#3e5c9a", general:"#e0983d", tema:"#2eb8ba", fondo:"#c9567f", avisos:"#3fa66b", recordatorio:"#25d366", diario:"#c1612a", comparativa:"#d2691e", wrapped:"#c9567f", insights:"#2e8ab8", reordenar:"#3fa66b", exportar:"#4f63d2", archivados:"#e0603d", acerca:"#8a5fc9"};
+  var SETTING_COLORS = {perfil:"#3e5c9a", general:"#e0983d", tema:"#2eb8ba", fondo:"#c9567f", avisos:"#3fa66b", recordatorio:"#25d366", diario:"#c1612a", comparativa:"#d2691e", wrapped:"#c9567f", insights:"#2e8ab8", reordenar:"#3fa66b", sync:"#2563eb", exportar:"#4f63d2", archivados:"#e0603d", acerca:"#8a5fc9"};
   var DAILY_KEY = "habitgrid_daily_reminder_v1";
   var FREEZE_LIMIT = 2;
   function freezeKey(){ return "habitgrid_freezes_"+activeProfileId; }
@@ -773,7 +759,8 @@
       return list;
     }catch(e){ return [{id:"p_default", name:"Yo", color:PROFILE_COLORS[0]}]; }
   }
-  function saveProfiles(list){ try{ localStorage.setItem(PROFILES_KEY, JSON.stringify(list)); }catch(e){} }
+  function saveProfilesLocalOnly(list){ try{ localStorage.setItem(PROFILES_KEY, JSON.stringify(list)); }catch(e){} }
+  function saveProfiles(list){ saveProfilesLocalOnly(list); cloudPush(); }
   function getActiveProfileId(){
     var id = localStorage.getItem(ACTIVE_PROFILE_KEY);
     if(!id || !profiles.find(function(p){return p.id===id;})) id = profiles[0].id;
@@ -794,6 +781,129 @@
   var activeProfileId = getActiveProfileId();
 
   var habits = load();
+
+  // ================= sincronización en la nube (Firebase) =================
+  var HOUSEHOLD_KEY = "habitgrid_household_code_v1";
+  var DEVICE_ID_KEY = "habitgrid_device_id_v1";
+  var householdCode = localStorage.getItem(HOUSEHOLD_KEY) || null;
+  var cloudReady = false;
+  var cloudUnsub = null;
+  var cloudPushTimer = null;
+  var deviceId = (function(){
+    var id = localStorage.getItem(DEVICE_ID_KEY);
+    if(!id){ id = "d_"+Date.now()+"_"+Math.floor(Math.random()*100000); try{ localStorage.setItem(DEVICE_ID_KEY, id); }catch(e){} }
+    return id;
+  })();
+  var firebaseConfig = {
+    apiKey: "AIzaSyCEjfD8vijSgdu38mDyREfLb5d2zJqRnqw",
+    authDomain: "rachario.firebaseapp.com",
+    projectId: "rachario",
+    storageBucket: "rachario.firebasestorage.app",
+    messagingSenderId: "167576402415",
+    appId: "1:167576402415:web:5678e013fa9e5180889e1a",
+    measurementId: "G-2NC3WZGHZK"
+  };
+  var db = null;
+  if(typeof firebase!=="undefined"){
+    try{
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.firestore();
+      firebase.auth().signInAnonymously().catch(function(e){ console.warn("Fallo al autenticar con Firebase", e); });
+      firebase.auth().onAuthStateChanged(function(user){
+        if(user){
+          cloudReady = true;
+          if(householdCode) cloudStartListening(householdCode);
+        }
+      });
+    }catch(e){ console.warn("Fallo al iniciar Firebase", e); }
+  }
+  function generateHouseholdCode(){
+    var chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    var code = "";
+    for(var i=0;i<8;i++) code += chars[Math.floor(Math.random()*chars.length)];
+    return code;
+  }
+  function allHabitsByProfile(){
+    var map = {};
+    profiles.forEach(function(p){
+      try{
+        var raw = localStorage.getItem(habitsKey(p.id));
+        map[p.id] = raw ? JSON.parse(raw) : [];
+      }catch(e){ map[p.id] = []; }
+    });
+    return map;
+  }
+  function buildCloudPayload(){
+    return {
+      profiles: profiles,
+      habitsByProfile: allHabitsByProfile(),
+      updatedBy: deviceId,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+  }
+  function cloudPush(){
+    if(!cloudReady || !householdCode || !db) return;
+    clearTimeout(cloudPushTimer);
+    cloudPushTimer = setTimeout(function(){
+      db.collection("households").doc(householdCode).set(buildCloudPayload(), {merge:true})
+        .catch(function(e){ console.warn("No se pudo sincronizar", e); });
+    }, 900);
+  }
+  function applyCloudData(data){
+    if(Array.isArray(data.profiles) && data.profiles.length>0){
+      profiles = data.profiles;
+      saveProfilesLocalOnly(profiles);
+    }
+    if(data.habitsByProfile){
+      Object.keys(data.habitsByProfile).forEach(function(pid){
+        try{ localStorage.setItem(habitsKey(pid), JSON.stringify(data.habitsByProfile[pid])); }catch(e){}
+      });
+    }
+    if(!profiles.find(function(p){return p.id===activeProfileId;})) setActiveProfileId(profiles[0].id);
+    habits = load();
+    render();
+  }
+  function cloudStartListening(code){
+    if(cloudUnsub){ cloudUnsub(); cloudUnsub=null; }
+    if(!db) return;
+    cloudUnsub = db.collection("households").doc(code).onSnapshot(function(snap){
+      if(!snap.exists) return;
+      var data = snap.data();
+      if(data.updatedBy===deviceId) return;
+      applyCloudData(data);
+      toast("🔄 Sincronizado con tu pareja");
+    }, function(err){ console.warn("Error escuchando cambios", err); });
+  }
+  function cloudCreate(){
+    var code = generateHouseholdCode();
+    householdCode = code;
+    try{ localStorage.setItem(HOUSEHOLD_KEY, code); }catch(e){}
+    cloudStartListening(code);
+    cloudPush();
+  }
+  function cloudJoin(code, done){
+    code = (code||"").trim().toUpperCase();
+    if(!code){ toast("Escribe un código"); if(done) done(); return; }
+    if(!db){ toast("La sincronización no está disponible ahora mismo"); if(done) done(); return; }
+    db.collection("households").doc(code).get().then(function(snap){
+      if(!snap.exists){ toast("Ese código no existe todavía"); if(done) done(); return; }
+      applyCloudData(snap.data());
+      householdCode = code;
+      try{ localStorage.setItem(HOUSEHOLD_KEY, code); }catch(e){}
+      cloudStartListening(code);
+      toast("✅ Sincronización activada");
+      if(done) done();
+    }).catch(function(e){
+      toast("No se pudo conectar. Revisa tu internet.");
+      if(done) done();
+    });
+  }
+  function cloudLeave(){
+    if(cloudUnsub){ cloudUnsub(); cloudUnsub=null; }
+    householdCode = null;
+    try{ localStorage.removeItem(HOUSEHOLD_KEY); }catch(e){}
+  }
+
   var theme = localStorage.getItem(THEME_KEY) || "paper";
   document.documentElement.setAttribute("data-theme", theme);
   function bgKey(t){ return BG_KEY_PREFIX+t; }
@@ -905,6 +1015,7 @@
   function save(){
     try{ localStorage.setItem(habitsKey(activeProfileId), JSON.stringify(habits)); }
     catch(e){ toast("No se pudo guardar (¿modo privado del navegador?)"); }
+    cloudPush();
   }
   function activeHabits(){ return habits.filter(function(h){ return !h.archived; }); }
   function categoryInfo(id){
@@ -1665,6 +1776,7 @@
     html += settingRow("wrapped","🎁","Resumen anual","");
     html += settingRow("insights","🧠","Insights","");
     html += settingRow("reordenar","↕️","Reordenar hábitos","");
+    html += settingRow("sync","🔗","Sincronización", householdCode ? "Activada" : "Desactivada");
     html += settingRow("exportar","🔄","Exportar / importar hábitos","");
     html += settingRow("archivados","🗄️","Hábitos archivados", habits.filter(function(h){return h.archived;}).length+"");
     html += settingRow("acerca","ℹ️","Acerca de","");
@@ -1802,6 +1914,7 @@
     else if(a==="setting-wrapped") openWrappedModal();
     else if(a==="setting-insights") openInsightsModal();
     else if(a==="setting-reordenar") openReorderModal();
+    else if(a==="setting-sync") openSyncModal();
     else if(a==="setting-diario") openDailyReminderModal();
     else if(a==="setting-exportar") document.getElementById("overlayBackup").classList.add("open");
     else if(a==="setting-archivados") openArchivedModal();
@@ -2405,6 +2518,49 @@
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(function(){ URL.revokeObjectURL(url); }, 3000);
       toast("📥 Imagen descargada");
+    });
+  }
+
+  function openSyncModal(){
+    var html;
+    if(householdCode){
+      html = '<p class="hint" style="margin-top:0;">Sincronizado. Comparte este código con tu pareja para que lo introduzca en su móvil (Configuración → Sincronización → Unirme) y veáis los mismos hábitos los dos, al momento.</p>'+
+        '<div class="sync-code">'+householdCode+'</div>'+
+        '<button class="btn ghost small" id="btnCopyCode" style="margin-top:10px; width:100%;">📋 Copiar código</button>'+
+        '<button class="btn danger small" id="btnLeaveSync" style="margin-top:18px; width:100%;">Dejar de sincronizar este móvil</button>';
+    } else {
+      html = '<p class="hint" style="margin-top:0;">Sincroniza tus hábitos entre tu móvil y el de tu pareja, en tiempo real.</p>'+
+        '<button class="btn" id="btnCreateSync" style="width:100%;">Crear código nuevo (soy el primero)</button>'+
+        '<p class="hint" style="text-align:center;">— o —</p>'+
+        '<div style="display:flex; gap:8px;">'+
+          '<input type="text" id="inpJoinCode" maxlength="8" placeholder="Código de tu pareja" style="flex:1; font-family:var(--mono); text-transform:uppercase; font-size:14px; padding:9px 10px; border:1px solid var(--paper-line); border-radius:var(--radius); background:var(--surface); color:var(--ink);">'+
+          '<button class="btn ghost small" id="btnJoinSync">Unirme</button>'+
+        '</div>';
+    }
+    document.getElementById("aboutTitle").textContent = "Sincronización";
+    document.getElementById("aboutText").innerHTML = html;
+    document.getElementById("overlayAbout").classList.add("open");
+
+    var createBtn = document.getElementById("btnCreateSync");
+    if(createBtn) createBtn.addEventListener("click", function(){ cloudCreate(); openSyncModal(); });
+    var joinBtn = document.getElementById("btnJoinSync");
+    if(joinBtn) joinBtn.addEventListener("click", function(){
+      var v = document.getElementById("inpJoinCode").value;
+      joinBtn.textContent = "Conectando…"; joinBtn.disabled = true;
+      cloudJoin(v, function(){ openSyncModal(); });
+    });
+    var copyBtn = document.getElementById("btnCopyCode");
+    if(copyBtn) copyBtn.addEventListener("click", function(){
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(householdCode).then(function(){ toast("Código copiado"); });
+      } else { toast(householdCode); }
+    });
+    var leaveBtn = document.getElementById("btnLeaveSync");
+    if(leaveBtn) leaveBtn.addEventListener("click", function(){
+      if(confirm("¿Dejar de sincronizar este móvil? Tus datos locales se quedan como están, pero dejarán de actualizarse con los de tu pareja.")){
+        cloudLeave();
+        openSyncModal();
+      }
     });
   }
 
