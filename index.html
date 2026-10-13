@@ -333,6 +333,21 @@
   .wrapped-hl-val{ font-size:16px; font-weight:700; margin-top:3px; }
   .wrapped-brand{ font-family:var(--mono); font-size:12px; color:#cbb9ab; margin-top:16px; letter-spacing:.08em; }
 
+  /* ---------- Hábitos en equipo ---------- */
+  .team-group{ border-color:var(--paper-line); }
+  .team-partners{ display:flex; flex-direction:column; gap:6px; padding:4px 14px 12px; border-top:1px solid var(--paper-line-soft); margin-top:2px; }
+  .team-partner-row{ display:flex; align-items:center; gap:8px; padding:4px 0; font-size:12.5px; }
+  .team-partner-dot{ width:9px; height:9px; border-radius:50%; flex:none; }
+  .team-partner-name{ font-weight:600; color:var(--ink); }
+  .team-partner-status{ color:var(--ink-faint); margin-left:auto; }
+  .team-partner-status.done{ color:#2eb86a; }
+  .team-react{ display:flex; gap:4px; }
+  .react-btn{ border:1px solid var(--paper-line); background:var(--surface); border-radius:999px; padding:2px 7px; font-size:13px; cursor:pointer; }
+  .react-btn.sel{ background:var(--accent-soft); border-color:var(--ink); }
+  .team-list{ display:flex; flex-direction:column; gap:8px; }
+  .team-list-row{ display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--paper-line); border-radius:12px; background:var(--surface); }
+  .team-list-name{ flex:1; font-weight:600; font-size:14px; }
+
   /* ---------- Sincronización ---------- */
   .sync-code{
     font-family:var(--mono); font-weight:700; font-size:26px; letter-spacing:.12em;
@@ -572,6 +587,17 @@
       <div class="cat-select" id="catSelect"></div>
     </div>
     <div class="field">
+      <label>🎯 Reto con fecha límite (opcional)</label>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-family:var(--sans); color:var(--ink);">
+          <input type="checkbox" id="chkChallenge"> Activar
+        </label>
+        <input type="number" id="inpChallengeDays" min="2" max="365" value="30" disabled style="width:80px; font-family:var(--sans); font-size:14px; padding:9px 10px; border:1px solid var(--paper-line); border-radius:var(--radius); background:var(--surface); color:var(--ink);">
+        <span class="hint" style="margin:0;">días</span>
+      </div>
+      <p class="hint" id="challengeHint" style="display:none;">Empieza hoy y dura los días que indiques. Si lo completas sin fallar, verás una pantalla de celebración.</p>
+    </div>
+    <div class="field">
       <label>Icono</label>
       <div class="icon-grid" id="iconGrid"></div>
     </div>
@@ -689,7 +715,7 @@
   var MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
   var MESES_CORTOS = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
   var MILESTONES = [7,14,30,100,365];
-  var SETTING_COLORS = {perfil:"#3e5c9a", general:"#e0983d", tema:"#2eb8ba", fondo:"#c9567f", avisos:"#3fa66b", recordatorio:"#25d366", diario:"#c1612a", comparativa:"#d2691e", wrapped:"#c9567f", insights:"#2e8ab8", reordenar:"#3fa66b", sync:"#2563eb", exportar:"#4f63d2", archivados:"#e0603d", acerca:"#8a5fc9"};
+  var SETTING_COLORS = {perfil:"#3e5c9a", general:"#e0983d", tema:"#2eb8ba", fondo:"#c9567f", avisos:"#3fa66b", recordatorio:"#25d366", diario:"#c1612a", comparativa:"#d2691e", wrapped:"#c9567f", insights:"#2e8ab8", reordenar:"#3fa66b", sync:"#2563eb", equipo:"#b4567a", exportar:"#4f63d2", archivados:"#e0603d", acerca:"#8a5fc9"};
   var DAILY_KEY = "habitgrid_daily_reminder_v1";
   var FREEZE_LIMIT = 2;
   function freezeKey(){ return "habitgrid_freezes_"+activeProfileId; }
@@ -781,6 +807,7 @@
   var activeProfileId = getActiveProfileId();
 
   var habits = load();
+  var teamHabits = loadTeamHabits();
 
   // ================= sincronización en la nube (Firebase) =================
   var HOUSEHOLD_KEY = "habitgrid_household_code_v1";
@@ -837,6 +864,7 @@
     return {
       profiles: profiles,
       habitsByProfile: allHabitsByProfile(),
+      teamHabits: teamHabits,
       updatedBy: deviceId,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     };
@@ -858,6 +886,10 @@
       Object.keys(data.habitsByProfile).forEach(function(pid){
         try{ localStorage.setItem(habitsKey(pid), JSON.stringify(data.habitsByProfile[pid])); }catch(e){}
       });
+    }
+    if(Array.isArray(data.teamHabits)){
+      teamHabits = data.teamHabits;
+      saveTeamHabitsLocalOnly();
     }
     if(!profiles.find(function(p){return p.id===activeProfileId;})) setActiveProfileId(profiles[0].id);
     habits = load();
@@ -952,6 +984,12 @@
     catSelectEl.appendChild(b);
   });
 
+  document.getElementById("chkChallenge").addEventListener("change", function(){
+    var on = this.checked;
+    document.getElementById("inpChallengeDays").disabled = !on;
+    document.getElementById("challengeHint").style.display = on ? "block" : "none";
+  });
+
   var selSubtasks = [];
   var subListEl = document.getElementById("subList");
   function renderSubList(){
@@ -1016,6 +1054,66 @@
     try{ localStorage.setItem(habitsKey(activeProfileId), JSON.stringify(habits)); }
     catch(e){ toast("No se pudo guardar (¿modo privado del navegador?)"); }
     cloudPush();
+  }
+
+  // ================= hábitos en equipo =================
+  var TEAM_KEY = "habitgrid_team_habits_v1";
+  function loadTeamHabits(){
+    try{
+      var raw = localStorage.getItem(TEAM_KEY);
+      var list = raw ? JSON.parse(raw) : [];
+      if(!Array.isArray(list)) list = [];
+      list.forEach(function(t){
+        if(!t.completions) t.completions={};
+        if(!t.reactions) t.reactions={};
+        if(!t.color) t.color = COLORS[0];
+        if(!t.icon) t.icon = "🤝";
+        if(!t.freq) t.freq="daily";
+        if(!t.days) t.days=[0,1,2,3,4,5,6];
+      });
+      return list;
+    }catch(e){ return []; }
+  }
+  function saveTeamHabitsLocalOnly(){ try{ localStorage.setItem(TEAM_KEY, JSON.stringify(teamHabits)); }catch(e){} }
+  function saveTeamHabits(){ saveTeamHabitsLocalOnly(); cloudPush(); }
+  function teamDone(th, profileId, dateStr){ return !!(th.completions[profileId] && th.completions[profileId][dateStr]); }
+  function teamAllDone(th, dateStr){ return profiles.length>0 && profiles.every(function(p){ return teamDone(th, p.id, dateStr); }); }
+  function teamToggleMine(habitId, dateStr){
+    var th = teamHabits.find(function(x){return x.id===habitId;});
+    if(!th) return;
+    if(!th.completions[activeProfileId]) th.completions[activeProfileId] = {};
+    var was = !!th.completions[activeProfileId][dateStr];
+    if(was) delete th.completions[activeProfileId][dateStr]; else th.completions[activeProfileId][dateStr]=true;
+    saveTeamHabits();
+    render();
+    if(!was && teamAllDone(th, dateStr) && dateStr===fmt(today())){
+      celebrate(th.color);
+      toast("🎉 ¡"+th.name+" completado entre los dos!");
+    }
+  }
+  function teamCurrentStreak(th){
+    var streak=0, d=today(), guard=0;
+    while(guard<4000){
+      guard++;
+      if(isScheduled(th,d)){
+        var key=fmt(d);
+        if(teamAllDone(th,key)) streak++;
+        else if(isSameDay(d,today())){ /* hoy pendiente, no rompe */ }
+        else break;
+      }
+      d = addDays(d,-1);
+    }
+    return streak;
+  }
+  function teamReact(habitId, dateStr, emoji){
+    var th = teamHabits.find(function(x){return x.id===habitId;});
+    if(!th) return;
+    if(!th.reactions[dateStr]) th.reactions[dateStr]={};
+    var cur = th.reactions[dateStr][activeProfileId];
+    if(cur===emoji) delete th.reactions[dateStr][activeProfileId];
+    else th.reactions[dateStr][activeProfileId]=emoji;
+    saveTeamHabits();
+    render();
   }
   function activeHabits(){ return habits.filter(function(h){ return !h.archived; }); }
   function categoryInfo(id){
@@ -1329,6 +1427,7 @@
       save(); render();
       if(!wasMet && dateStr===fmt(today())){
         toast("Anotado en \""+h.name+"\" ("+tgt+(h.unit?" "+h.unit:"")+")");
+        checkChallengeCompletion(h);
       }
       return;
     }
@@ -1352,7 +1451,7 @@
 
     if(h.kind==="avoid"){
       if(!wasMarked && dateStr===fmt(today())) toast("😕 Recaída registrada en \""+h.name+"\"");
-      else if(wasMarked && dateStr===fmt(today())) toast("Recaída eliminada, ¡sigues limpio!");
+      else if(wasMarked && dateStr===fmt(today())){ toast("Recaída eliminada, ¡sigues limpio!"); checkChallengeCompletion(h); }
       return;
     }
 
@@ -1360,7 +1459,38 @@
       var streak = currentStreak(h);
       if(MILESTONES.indexOf(streak)!==-1){ celebrate(h.color); toast("🔥 "+streak+" días de racha en \""+h.name+"\""); }
       else toast("Anotado en \""+h.name+"\"");
+      checkChallengeCompletion(h);
     }
+  }
+  function challengeStreak(h){
+    if(!h.challengeDays || !h.challengeStart) return 0;
+    var d = new Date(h.challengeStart+"T00:00:00");
+    var end = today();
+    var streak=0, guard=0;
+    while(d<=end && guard<400){
+      guard++;
+      if(isDaySuccess(h, fmt(d))) streak++; else break;
+      d = addDays(d,1);
+    }
+    return streak;
+  }
+  function checkChallengeCompletion(h){
+    if(h.challengeDays && !h.challengeCelebrated && challengeStreak(h) >= h.challengeDays){
+      h.challengeCelebrated = true;
+      save();
+      openChallengeCelebration(h);
+    }
+  }
+  function openChallengeCelebration(h){
+    document.getElementById("aboutTitle").textContent = "¡Reto conseguido! 🎉";
+    document.getElementById("aboutText").innerHTML =
+      '<div style="text-align:center; padding:14px 0 6px;">'+
+        '<div style="font-size:60px; line-height:1;">🏆</div>'+
+        '<div style="font-size:20px; font-weight:700; margin-top:14px;">'+escapeHtml(h.name)+'</div>'+
+        '<div style="font-size:14px; color:var(--ink-soft); margin-top:8px;">Completaste los <strong style="color:var(--ink);">'+h.challengeDays+' días</strong> sin fallar. ¡Enhorabuena!</div>'+
+      '</div>';
+    document.getElementById("overlayAbout").classList.add("open");
+    celebrate(h.color);
   }
   function subtasksDoneCount(h, dateStr){
     var st = h.subtaskState[dateStr] || {};
@@ -1486,6 +1616,12 @@
         '<button class="btn small" data-action="use-freeze">Usar comodín</button>'+
       '</div>';
     }
+    var teamToday = teamHabits.filter(function(th){ return isScheduled(th, today()); });
+    if(teamToday.length>0){
+      html += '<div class="section-title">🤝 En equipo</div>';
+      teamToday.forEach(function(th){ html += teamRowHtml(th); });
+    }
+
     html += '<div class="today-line">'+weekdayLabelToday()+'</div>';
 
     if(list.length===0){
@@ -1522,20 +1658,30 @@
     html += '</div>';
     return html;
   }
+  function challengeBadgeHtml(h){
+    if(!h.challengeDays || !h.challengeStart) return "";
+    var n = challengeStreak(h);
+    if(h.challengeCelebrated || n>=h.challengeDays){
+      return ' <span class="hint" style="color:var(--ink-soft);">· 🏆 reto completado</span>';
+    }
+    var start = new Date(h.challengeStart+"T00:00:00");
+    var elapsedCal = Math.floor((today()-start)/86400000)+1;
+    return ' <span class="hint" style="color:var(--ink-soft);">· 🎯 día '+Math.min(elapsedCal,h.challengeDays)+'/'+h.challengeDays+' del reto</span>';
+  }
   function todaySubHtml(h){
     if(h.kind==="avoid"){
       var marked = !!h.completions[fmt(today())];
-      return '<div class="today-sub">'+(marked ? '😕 recaída hoy' : '✨ '+currentStreak(h)+' días sin recaer')+'</div>';
+      return '<div class="today-sub">'+(marked ? '😕 recaída hoy' : '✨ '+currentStreak(h)+' días sin recaer')+challengeBadgeHtml(h)+'</div>';
     }
     if(h.kind==="quantity"){
       var val = h.completions[fmt(today())]||0;
-      return '<div class="today-sub">🔥 '+currentStreak(h)+' días de racha · '+val+'/'+(h.target||1)+(h.unit?" "+h.unit:"")+'</div>';
+      return '<div class="today-sub">🔥 '+currentStreak(h)+' días de racha · '+val+'/'+(h.target||1)+(h.unit?" "+h.unit:"")+challengeBadgeHtml(h)+'</div>';
     }
     if(h.subtasks && h.subtasks.length>0){
       var n = subtasksDoneCount(h, fmt(today()));
-      return '<div class="today-sub">🔥 '+currentStreak(h)+' días de racha · '+n+'/'+h.subtasks.length+' pasos</div>';
+      return '<div class="today-sub">🔥 '+currentStreak(h)+' días de racha · '+n+'/'+h.subtasks.length+' pasos'+challengeBadgeHtml(h)+'</div>';
     }
-    return '<div class="today-sub">🔥 '+currentStreak(h)+' días de racha</div>';
+    return '<div class="today-sub">🔥 '+currentStreak(h)+' días de racha'+challengeBadgeHtml(h)+'</div>';
   }
   function todayControlHtml(h, key){
     if(h.kind==="avoid"){
@@ -1556,6 +1702,41 @@
     }
     var done = !!h.completions[key];
     return '<button class="today-check'+(done?' done':'')+'" data-action="today-toggle" data-habit="'+h.id+'" data-date="'+key+'" style="--chk-color:'+h.color+';" aria-label="Marcar '+escapeHtml(h.name)+'">'+(done?'✓':'')+'</button>';
+  }
+
+  function teamRowHtml(th){
+    var key = fmt(today());
+    var mineDone = teamDone(th, activeProfileId, key);
+    var partners = profiles.filter(function(p){ return p.id!==activeProfileId; });
+    var allDone = teamAllDone(th, key);
+    var streak = teamCurrentStreak(th);
+    var html = '<div class="today-group team-group">';
+    html += '<div class="today-row">'+
+      '<div class="today-icon" style="background:'+hexAlpha(th.color,0.22)+';">'+th.icon+'</div>'+
+      '<div class="today-info">'+
+        '<div class="today-name">'+escapeHtml(th.name)+'</div>'+
+        '<div class="today-sub">🤝 '+streak+' días juntos'+(allDone?' · ¡hoy completo!':'')+'</div>'+
+      '</div>'+
+      '<button class="today-check'+(mineDone?' done':'')+'" data-action="team-toggle" data-team="'+th.id+'" data-date="'+key+'" style="--chk-color:'+th.color+';" aria-label="Marcar mi parte de '+escapeHtml(th.name)+'">'+(mineDone?'✓':'')+'</button>'+
+    '</div>';
+    if(partners.length>0){
+      html += '<div class="team-partners">';
+      partners.forEach(function(p){
+        var pDone = teamDone(th, p.id, key);
+        var reaction = (th.reactions[key]||{})[activeProfileId];
+        html += '<div class="team-partner-row">'+
+          '<span class="team-partner-dot" style="background:'+(p.color||PROFILE_COLORS[0])+';"></span>'+
+          '<span class="team-partner-name">'+escapeHtml(p.name)+'</span>'+
+          '<span class="team-partner-status'+(pDone?' done':'')+'">'+(pDone?'✅ hecho':'⏳ pendiente')+'</span>'+
+          (pDone ? '<div class="team-react">'+
+            ['👏','🔥'].map(function(e){ return '<button class="react-btn'+(reaction===e?' sel':'')+'" data-action="team-react" data-team="'+th.id+'" data-date="'+key+'" data-emoji="'+e+'">'+e+'</button>'; }).join('')+
+          '</div>' : '')+
+        '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
   }
 
   function viewMes(){
@@ -1775,6 +1956,7 @@
     html += settingRow("comparativa","🤝","Comparativa de la semana","");
     html += settingRow("wrapped","🎁","Resumen anual","");
     html += settingRow("insights","🧠","Insights","");
+    html += settingRow("equipo","🤝","Hábitos en equipo", teamHabits.length ? String(teamHabits.length) : "");
     html += settingRow("reordenar","↕️","Reordenar hábitos","");
     html += settingRow("sync","🔗","Sincronización", householdCode ? "Activada" : "Desactivada");
     html += settingRow("exportar","🔄","Exportar / importar hábitos","");
@@ -1883,7 +2065,7 @@
     }
 
     var chk = e.target.closest(".today-check");
-    if(chk){ toggleDay(chk.getAttribute("data-habit"), chk.getAttribute("data-date")); return; }
+    if(chk && chk.getAttribute("data-action")==="today-toggle"){ toggleDay(chk.getAttribute("data-habit"), chk.getAttribute("data-date")); return; }
 
     var act = e.target.closest("[data-action]");
     if(!act) return;
@@ -1894,6 +2076,8 @@
     else if(a==="qty-plus") adjustQty(act.getAttribute("data-habit"), act.getAttribute("data-date"), 1);
     else if(a==="sub-toggle") toggleSubtask(act.getAttribute("data-habit"), act.getAttribute("data-date"), act.getAttribute("data-sub"));
     else if(a==="filter-cat"){ filterCategory = act.getAttribute("data-cat"); render(); }
+    else if(a==="team-toggle") teamToggleMine(act.getAttribute("data-team"), act.getAttribute("data-date"));
+    else if(a==="team-react") teamReact(act.getAttribute("data-team"), act.getAttribute("data-date"), act.getAttribute("data-emoji"));
     else if(a==="new-habit") openModal(null);
     else if(a==="edit-habit") openModal(act.getAttribute("data-id"));
     else if(a==="mes-prev"){ mesCursor = addMonths(mesCursor,-1); render(); }
@@ -1913,6 +2097,7 @@
     else if(a==="setting-comparativa") openCompareModal();
     else if(a==="setting-wrapped") openWrappedModal();
     else if(a==="setting-insights") openInsightsModal();
+    else if(a==="setting-equipo") openTeamModal();
     else if(a==="setting-reordenar") openReorderModal();
     else if(a==="setting-sync") openSyncModal();
     else if(a==="setting-diario") openDailyReminderModal();
@@ -2023,6 +2208,12 @@
     selCategory = h ? (h.category||"otros") : "otros";
     catSelectEl.querySelectorAll(".cat-opt").forEach(function(b){ b.classList.toggle("sel", b.getAttribute("data-cat-id")===selCategory); });
 
+    var hasChallenge = !!(h && h.challengeDays);
+    document.getElementById("chkChallenge").checked = hasChallenge;
+    document.getElementById("inpChallengeDays").disabled = !hasChallenge;
+    document.getElementById("inpChallengeDays").value = hasChallenge ? h.challengeDays : 30;
+    document.getElementById("challengeHint").style.display = hasChallenge ? "block" : "none";
+
     overlay.classList.add("open");
     setTimeout(function(){ document.getElementById("inpName").focus(); }, 30);
   }
@@ -2040,6 +2231,8 @@
     var target = Math.max(1, parseInt(document.getElementById("inpTarget").value,10) || 1);
     var unit = document.getElementById("inpUnit").value.trim();
     var subtasks = selKind==="build" ? selSubtasks.filter(function(s){return s.label.trim();}).map(function(s){return {id:s.id, label:s.label.trim()};}) : [];
+    var challengeOn = document.getElementById("chkChallenge").checked;
+    var challengeDays = Math.max(2, Math.min(365, parseInt(document.getElementById("inpChallengeDays").value,10) || 30));
 
     if(editingId){
       var h = habits.find(function(x){return x.id===editingId;});
@@ -2057,6 +2250,12 @@
           Object.keys(h.subtaskState[dateKey]).forEach(function(sid){ if(!validIds[sid]) delete h.subtaskState[dateKey][sid]; });
         });
       } else { h.subtaskState = {}; }
+      if(challengeOn){
+        if(!h.challengeDays){ h.challengeStart = fmt(today()); h.challengeCelebrated = false; }
+        h.challengeDays = challengeDays;
+      } else {
+        delete h.challengeDays; delete h.challengeStart; delete h.challengeCelebrated;
+      }
     } else {
       var nh = {
         id:"h_"+Date.now()+"_"+Math.floor(Math.random()*1000),
@@ -2066,6 +2265,7 @@
         kind:selKind, subtasks:subtasks, subtaskState:{}, category:selCategory
       };
       if(selKind==="quantity"){ nh.target=target; nh.unit=unit; nh.step=1; }
+      if(challengeOn){ nh.challengeDays = challengeDays; nh.challengeStart = fmt(today()); nh.challengeCelebrated = false; }
       habits.push(nh);
     }
     save(); closeModal(); render();
@@ -2518,6 +2718,68 @@
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(function(){ URL.revokeObjectURL(url); }, 3000);
       toast("📥 Imagen descargada");
+    });
+  }
+
+  var selTeamColor = COLORS[0];
+  function openTeamModal(){
+    var html = '<p class="hint" style="margin-top:0;">Hábitos que solo cuentan como completados cuando los marcáis los dos ese día — con su propia racha compartida. Se sincronizan automáticamente si tenéis el código conectado.</p>';
+    if(teamHabits.length>0){
+      html += '<div class="team-list">';
+      teamHabits.forEach(function(th){
+        html += '<div class="team-list-row">'+
+          '<div class="today-icon" style="background:'+hexAlpha(th.color,0.22)+';">'+th.icon+'</div>'+
+          '<div class="team-list-name">'+escapeHtml(th.name)+'</div>'+
+          '<button class="icon-btn" data-team-del="'+th.id+'">🗑</button>'+
+        '</div>';
+      });
+      html += '</div>';
+    }
+    html += '<div class="field" style="margin-top:18px;">'+
+      '<label>Nuevo hábito en equipo</label>'+
+      '<input type="text" id="inpTeamName" maxlength="40" placeholder="p. ej. Cenar sin móvil" style="width:100%; box-sizing:border-box; font-family:var(--sans); font-size:14px; padding:9px 10px; border:1px solid var(--paper-line); border-radius:var(--radius); background:var(--surface); color:var(--ink); margin-bottom:10px;">'+
+      '<div class="color-grid" id="teamColorGrid"></div>'+
+      '<button class="btn" id="btnAddTeam" style="width:100%; margin-top:12px;">+ Crear hábito en equipo</button>'+
+    '</div>';
+
+    document.getElementById("aboutTitle").textContent = "Hábitos en equipo";
+    document.getElementById("aboutText").innerHTML = html;
+    document.getElementById("overlayAbout").classList.add("open");
+
+    var grid = document.getElementById("teamColorGrid");
+    COLORS.forEach(function(c){
+      var b = document.createElement("button");
+      b.type="button"; b.className="color-opt"+(c===selTeamColor?" sel":""); b.style.background=c; b.setAttribute("data-hex",c);
+      b.addEventListener("click", function(){
+        selTeamColor = c;
+        grid.querySelectorAll(".color-opt").forEach(function(x){x.classList.remove("sel");});
+        b.classList.add("sel");
+      });
+      grid.appendChild(b);
+    });
+    document.getElementById("btnAddTeam").addEventListener("click", function(){
+      var name = document.getElementById("inpTeamName").value.trim();
+      if(!name){ toast("Ponle un nombre"); return; }
+      teamHabits.push({
+        id:"t_"+Date.now()+"_"+Math.floor(Math.random()*1000),
+        name:name, icon:"🤝", color:selTeamColor, freq:"daily", days:[0,1,2,3,4,5,6],
+        completions:{}, reactions:{}
+      });
+      saveTeamHabits();
+      render();
+      openTeamModal();
+    });
+    document.querySelectorAll("[data-team-del]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        var id = btn.getAttribute("data-team-del");
+        var th = teamHabits.find(function(x){return x.id===id;});
+        if(th && confirm('¿Eliminar "'+th.name+'" y su historial?')){
+          teamHabits = teamHabits.filter(function(x){return x.id!==id;});
+          saveTeamHabits();
+          render();
+          openTeamModal();
+        }
+      });
     });
   }
 
