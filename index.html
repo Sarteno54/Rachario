@@ -196,16 +196,15 @@
 
   /* Año / Estadística: grid tipo mapa de calor, scroll horizontal */
   .heat-scroll{ overflow-x:auto; padding-bottom:4px; }
-  .heat-months{ display:flex; gap:3px; width:max-content; margin-bottom:3px; }
-  .heat-months span{ width:16px; font-size:8px; color:var(--ink-faint); font-family:var(--mono); }
-  .heat-months span.month-start{ margin-left:9px; }
+  .heat-year{ display:flex; width:max-content; }
+  .heat-month{ padding:0 9px; border-left:1px solid var(--paper-line); }
+  .heat-month:first-child{ padding-left:0; border-left:none; }
+  .heat-month-label{ font-size:9px; color:var(--ink-soft); font-family:var(--mono); margin-bottom:4px; text-transform:lowercase; }
   .heat-cols{ display:flex; gap:3px; width:max-content; }
-  .heat-week{ display:flex; flex-direction:column; gap:3px; padding:2px; border-radius:4px; position:relative; }
+  .heat-week{ display:flex; flex-direction:column; gap:3px; padding:2px; border-radius:4px; }
   .heat-week.hw-complete{ box-shadow:inset 0 0 0 2px var(--wk-color, var(--accent)); }
-  .heat-week.month-start{ margin-left:9px; }
-  .heat-week.month-start::before{ content:""; position:absolute; left:-6px; top:0; bottom:0; width:1px; background:var(--paper-line); }
-  .heat-week .cell{ width:16px; height:16px; }
-  .heat-week .cell-num{ font-size:6.5px; }
+  .heat-week .cell{ width:18px; height:18px; }
+  .heat-week .cell-num{ font-size:7px; }
 
   /* ---------- Empty state ---------- */
   .empty{ margin-top:30px; text-align:left; padding:30px 0; border-top:2px dashed var(--paper-line); border-bottom:2px dashed var(--paper-line); }
@@ -2104,33 +2103,30 @@
     return html;
   }
 
-  function heatmapHtml(h, year){
-    var jan1 = new Date(year,0,1), dec31 = new Date(year,11,31);
-    var start = mondayOf(jan1);
-    var weeks = Math.ceil((( (dec31-start) / 86400000 )+1)/7);
-    var monthsRow = '', cols='';
-    var lastMonth=-1;
-    for(var w=0; w<weeks; w++){
-      var colStart = addDays(start, w*7);
-      var lbl = "";
-      var isNewMonth = false;
-      if(colStart.getMonth()!==lastMonth && colStart <= dec31 && colStart.getDate()<=7){
-        lbl = MESES_CORTOS[colStart.getMonth()];
-        lastMonth = colStart.getMonth();
-        isNewMonth = (w>0);
+  // Mapa de calor del año: un bloque por mes; cada mes solo muestra sus propios días (sin repetir días de otros meses)
+  function heatYearHtml(year, cellFn, weekClassFn){
+    var out = '';
+    for(var m=0; m<12; m++){
+      var first = new Date(year,m,1), dim = daysInMonth(year,m), lead = mondayIndex(first);
+      var weeks = Math.ceil((lead+dim)/7), start = addDays(first,-lead), cols = '';
+      for(var w=0; w<weeks; w++){
+        var colStart = addDays(start,w*7), cells = '';
+        for(var d=0; d<7; d++){
+          var date = addDays(colStart,d);
+          cells += (date.getMonth()!==m) ? '<div class="cell pad"></div>' : cellFn(date);
+        }
+        var wc = weekClassFn ? weekClassFn(colStart) : "";
+        cols += '<div class="heat-week'+(wc?" "+wc:"")+'">'+cells+'</div>';
       }
-      monthsRow += '<span'+(isNewMonth?' class="month-start"':'')+'>'+lbl+'</span>';
-      var wm = weekMet(h, colStart);
-      var col = '<div class="heat-week'+(wm?" hw-complete":"")+(isNewMonth?" month-start":"")+'">';
-      for(var d=0; d<7; d++){
-        var date = addDays(colStart, d);
-        if(date < jan1 || date > dec31){ col += '<div class="cell pad" style="width:16px;height:16px;"></div>'; }
-        else{ col += cellHtml(h, date, null, true); }
-      }
-      col += '</div>';
-      cols += col;
+      out += '<div class="heat-month"><div class="heat-month-label">'+MESES_CORTOS[m]+'</div><div class="heat-cols">'+cols+'</div></div>';
     }
-    return '<div class="heat-scroll"><div class="heat-months">'+monthsRow+'</div><div class="heat-cols">'+cols+'</div></div>';
+    return '<div class="heat-scroll"><div class="heat-year">'+out+'</div></div>';
+  }
+
+  function heatmapHtml(h, year){
+    return heatYearHtml(year,
+      function(date){ return cellHtml(h, date, null, true); },
+      function(colStart){ return weekMet(h, colStart) ? "hw-complete" : ""; });
   }
 
   function combinedYearDayMap(year){
@@ -2162,40 +2158,17 @@
   }
   function combinedHeatmapHtml(year, map){
     var GREEN = "#2f9e5c";
-    var jan1 = new Date(year,0,1), dec31 = new Date(year,11,31);
-    var start = mondayOf(jan1);
-    var weeks = Math.ceil((((dec31-start)/86400000)+1)/7);
-    var monthsRow='', cols='';
-    var lastMonth=-1;
-    for(var w=0; w<weeks; w++){
-      var colStart = addDays(start,w*7);
-      var lbl=""; var isNewMonth=false;
-      if(colStart.getMonth()!==lastMonth && colStart<=dec31 && colStart.getDate()<=7){
-        lbl = MESES_CORTOS[colStart.getMonth()]; lastMonth=colStart.getMonth(); isNewMonth=(w>0);
+    return heatYearHtml(year, function(date){
+      var key = fmt(date), stat = map[key], bg, title;
+      if(!stat || stat.sched===0){ bg = "var(--paper-line-soft)"; title = key+": sin hábitos programados"; }
+      else{
+        var pct = stat.done/stat.sched;
+        var op = pct>=1 ? 1 : pct>=0.75 ? 0.75 : pct>=0.5 ? 0.5 : pct>0 ? 0.28 : 0.12;
+        bg = hexAlpha(GREEN, op);
+        title = key+": "+stat.done+"/"+stat.sched;
       }
-      monthsRow += '<span'+(isNewMonth?' class="month-start"':'')+'>'+lbl+'</span>';
-      var col = '<div class="heat-week'+(isNewMonth?" month-start":"")+'">';
-      for(var d=0; d<7; d++){
-        var date = addDays(colStart,d);
-        if(date<jan1 || date>dec31){ col += '<div class="cell pad" style="width:16px;height:16px;"></div>'; }
-        else{
-          var key = fmt(date);
-          var stat = map[key];
-          var bg, title;
-          if(!stat || stat.sched===0){ bg = "var(--paper-line-soft)"; title = key+": sin hábitos programados"; }
-          else{
-            var pct = stat.done/stat.sched;
-            var op = pct>=1 ? 1 : pct>=0.75 ? 0.75 : pct>=0.5 ? 0.5 : pct>0 ? 0.28 : 0.12;
-            bg = hexAlpha(GREEN, op);
-            title = key+": "+stat.done+"/"+stat.sched;
-          }
-          col += '<div class="cell'+(isSameDay(date,today())?' today':'')+'" style="width:16px;height:16px;background:'+bg+'; cursor:default;" title="'+title+'"></div>';
-        }
-      }
-      col += '</div>';
-      cols += col;
-    }
-    return '<div class="heat-scroll"><div class="heat-months">'+monthsRow+'</div><div class="heat-cols">'+cols+'</div></div>';
+      return '<div class="cell'+(isSameDay(date,today())?' today':'')+'" style="background:'+bg+'; cursor:default;" title="'+title+'"></div>';
+    });
   }
   var jointHeatmapYear = new Date().getFullYear();
   function openJointHeatmapModal(year){
