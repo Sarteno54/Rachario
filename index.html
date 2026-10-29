@@ -699,6 +699,19 @@
   .archived-item{ display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--paper-line); }
   .archived-item .habit-name{ flex:1; }
 
+  /* ---------- Bloqueo por perfil (Face ID) ---------- */
+  .lock-screen{ position:fixed; inset:0; z-index:90; display:none; align-items:center; justify-content:center; background:var(--paper); padding:24px; overflow-y:auto; }
+  .lock-box{ width:100%; max-width:380px; text-align:center; margin:auto; }
+  .lock-title{ font-family:var(--mono); font-weight:600; font-size:22px; margin:0 0 6px; }
+  .lock-sub{ font-size:13px; color:var(--ink-soft); margin-bottom:22px; line-height:1.5; }
+  .lock-profile{ display:flex; align-items:center; gap:14px; width:100%; padding:14px 16px; margin-bottom:10px; border:2px solid var(--ink); border-radius:14px; background:var(--surface); cursor:pointer; font-family:var(--sans); color:var(--ink); text-align:left; }
+  .lock-profile:active{ transform:scale(.98); }
+  .lock-profile.active{ background:var(--accent-soft); }
+  .lock-avatar{ width:42px; height:42px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:18px; flex:none; }
+  .lock-name{ flex:1; font-weight:600; font-size:16px; }
+  .lock-ico{ font-size:18px; }
+  .lock-msg{ min-height:20px; font-size:12.5px; color:var(--danger); margin:8px 0; line-height:1.4; }
+
   /* ---------- Toast / confetti ---------- */
   #toast{
     position:fixed; left:50%; bottom:88px; transform:translateX(-50%) translateY(20px);
@@ -731,6 +744,7 @@
       <h1 id="viewTitle">Mes</h1>
     </div>
     <div style="display:flex; align-items:center; gap:10px;">
+      <button class="fab-add" id="btnUserTop" title="Cambiar de usuario" style="font-size:15px; font-weight:700;">?</button>
       <button class="fab-add" id="btnSearchTop" title="Buscar hábito" style="font-size:17px;">🔍</button>
       <button class="fab-add" id="btnTemplatesTop" title="Plantillas rápidas" style="font-size:17px;">📚</button>
       <button class="fab-add" id="btnAddTop" title="Nuevo hábito">+</button>
@@ -898,6 +912,8 @@
   </div>
 </div>
 
+<div class="lock-screen" id="lockScreen"></div>
+
 <div id="toast"></div>
 
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -907,6 +923,7 @@
 (function(){
   "use strict";
 
+  var Notif = null;
   var STORAGE_KEY = "habitgrid_habits_v1";
   var PROFILES_KEY = "habitgrid_profiles_v1";
   var ACTIVE_PROFILE_KEY = "habitgrid_active_profile_v1";
@@ -939,8 +956,10 @@
   var MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
   var MESES_CORTOS = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
   var MILESTONES = [7,14,30,100,365];
-  var SETTING_COLORS = {perfil:"#3e5c9a", general:"#e0983d", tema:"#2eb8ba", fondo:"#c9567f", avisos:"#3fa66b", recordatorio:"#25d366", diario:"#c1612a", comparativa:"#d2691e", wrapped:"#c9567f", insights:"#2e8ab8", reordenar:"#3fa66b", sync:"#2563eb", equipo:"#b4567a", exportar:"#4f63d2", archivados:"#e0603d", acerca:"#8a5fc9", compartir:"#e0603d", constancia:"#2f9e5c"};
+  var SETTING_COLORS = {cuenta:"#7a4c8a", perfil:"#3e5c9a", general:"#e0983d", tema:"#2eb8ba", fondo:"#c9567f", avisos:"#3fa66b", recordatorio:"#25d366", diario:"#c1612a", comparativa:"#d2691e", wrapped:"#c9567f", insights:"#2e8ab8", reordenar:"#3fa66b", sync:"#2563eb", equipo:"#b4567a", exportar:"#4f63d2", archivados:"#e0603d", acerca:"#8a5fc9", compartir:"#e0603d", constancia:"#2f9e5c"};
   var DAILY_KEY = "habitgrid_daily_reminder_v1";
+  var INSIST_KEY = "habitgrid_insist_time_v1";
+  function insistTime(){ var v = localStorage.getItem(INSIST_KEY); return v===null ? "10:00" : v; }
   var FREEZE_LIMIT = 2;
   var WEEKLY_WIDGET_KEY = "habitgrid_weekly_dismiss_";
   function freezeKey(){ return "habitgrid_freezes_"+activeProfileId; }
@@ -1019,7 +1038,7 @@
   }
   function setActiveProfileId(id){ localStorage.setItem(ACTIVE_PROFILE_KEY, id); activeProfileId = id; }
   function currentProfile(){ return profiles.find(function(p){return p.id===activeProfileId;}) || profiles[0]; }
-  function switchProfile(id){ setActiveProfileId(id); habits = load(); statHabitId=null; render(); }
+  function switchProfile(id){ setActiveProfileId(id); habits = load(); statHabitId=null; render(); if(Notif) Notif.schedule(); }
   function addProfile(name){
     var id = "p_"+Date.now();
     var color = PROFILE_COLORS[profiles.length % PROFILE_COLORS.length];
@@ -1034,10 +1053,20 @@
   var habits = load();
   var teamHabits = loadTeamHabits();
 
-  // ================= sincronización en la nube (Firebase) =================
-  var HOUSEHOLD_KEY = "habitgrid_household_code_v1";
+  // ================= cuentas + sincronización en la nube (Firebase) =================
+  // Modelo: cada grupo es un documento "households/{id}" con una lista de miembros (uid de Firebase Auth).
+  // Las reglas de Firestore (firestore.rules) solo dejan leer/escribir a los miembros.
+  // Para entrar a un grupo se usa un código de invitación temporal ("invites/{codigo}").
+  var HOUSEHOLD_KEY = "habitgrid_household_id_v2";
+  var LEGACY_HOUSEHOLD_KEY = "habitgrid_household_code_v1";
   var DEVICE_ID_KEY = "habitgrid_device_id_v1";
-  var householdCode = localStorage.getItem(HOUSEHOLD_KEY) || null;
+  var INVITE_DAYS = 6;
+  var householdId = localStorage.getItem(HOUSEHOLD_KEY) || null;
+  var legacySyncReset = false;
+  try{
+    if(localStorage.getItem(LEGACY_HOUSEHOLD_KEY)){ localStorage.removeItem(LEGACY_HOUSEHOLD_KEY); legacySyncReset = true; }
+  }catch(e){}
+  var inviteInfo = null, householdMembers = 0;
   var cloudReady = false;
   var cloudUnsub = null;
   var cloudPushTimer = null;
@@ -1055,24 +1084,31 @@
     appId: "1:167576402415:web:5678e013fa9e5180889e1a",
     measurementId: "G-2NC3WZGHZK"
   };
-  var db = null;
+  var db = null, auth = null;
+  function curUser(){
+    var u = auth && auth.currentUser;
+    return (u && !u.isAnonymous) ? u : null;
+  }
   if(typeof firebase!=="undefined"){
     try{
       firebase.initializeApp(firebaseConfig);
       db = firebase.firestore();
-      firebase.auth().signInAnonymously().catch(function(e){ console.warn("Fallo al autenticar con Firebase", e); });
-      firebase.auth().onAuthStateChanged(function(user){
-        if(user){
-          cloudReady = true;
-          if(householdCode) cloudStartListening(householdCode);
-        }
+      auth = firebase.auth();
+      auth.onAuthStateChanged(function(user){
+        if(user && user.isAnonymous){ auth.signOut(); return; } /* las sesiones anónimas antiguas ya no valen */
+        cloudReady = !!user;
+        if(cloudUnsub){ cloudUnsub(); cloudUnsub = null; }
+        if(cloudReady && householdId){ cloudStartListening(householdId); scheduleSync(1500); }
+        if(activeView==="config") render();
       });
     }catch(e){ console.warn("Fallo al iniciar Firebase", e); }
   }
-  function generateHouseholdCode(){
-    var chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  function generateInviteCode(){
+    var chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; /* 32 símbolos: sin sesgo con bytes aleatorios */
+    var bytes = new Uint8Array(10);
+    (window.crypto || window.msCrypto).getRandomValues(bytes);
     var code = "";
-    for(var i=0;i<8;i++) code += chars[Math.floor(Math.random()*chars.length)];
+    for(var i=0;i<bytes.length;i++) code += chars[bytes[i] % 32];
     return code;
   }
   function allHabitsByProfile(){
@@ -1085,23 +1121,151 @@
     });
     return map;
   }
-  function buildCloudPayload(){
-    return {
+  function buildCloudPayload(forCreate){
+    var data = {
       profiles: profiles,
       habitsByProfile: allHabitsByProfile(),
       teamHabits: teamHabits,
       updatedBy: deviceId,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     };
+    if(!forCreate) data.joinCode = firebase.firestore.FieldValue.delete(); /* limpia el rastro de la invitación usada */
+    return data;
   }
-  function cloudPush(){
-    if(!cloudReady || !householdCode || !db) return;
-    clearTimeout(cloudPushTimer);
-    cloudPushTimer = setTimeout(function(){
-      db.collection("households").doc(householdCode).set(buildCloudPayload(), {merge:true})
-        .catch(function(e){ console.warn("No se pudo sincronizar", e); });
-    }, 900);
+  // ---------- motor de fusión (fusión a 3 bandas) ----------
+  // Cada sincronización lee el estado remoto, lo fusiona con el local usando como referencia el último
+  // estado sincronizado ("base") y escribe el resultado, todo en una transacción. Así los cambios de dos
+  // móviles se combinan (por hábito y por día) en vez de pisarse, y los borrados se respetan.
+  var BASE_PREFIX = "rachario_syncbase_v1_";
+  function stable(v){
+    if(v===undefined) return "u";
+    if(v===null || typeof v!=="object") return JSON.stringify(v);
+    if(Array.isArray(v)) return "["+v.map(stable).join(",")+"]";
+    return "{"+Object.keys(v).sort().map(function(k){ return JSON.stringify(k)+":"+stable(v[k]); }).join(",")+"}";
   }
+  function eq(a, b){ return stable(a)===stable(b); }
+  function clone(v){ return v===undefined ? undefined : JSON.parse(JSON.stringify(v)); }
+  function isObj(v){ return v!==null && typeof v==="object" && !Array.isArray(v); }
+  function merge3(b, l, r){
+    if(eq(l, r)) return clone(l);
+    if(eq(l, b)) return clone(r);   /* local sin cambios: se toma lo remoto */
+    if(eq(r, b)) return clone(l);   /* remoto sin cambios: se toma lo local */
+    if(isObj(l) && isObj(r)){
+      var bb = isObj(b) ? b : {}, out = {}, seen = {};
+      Object.keys(l).concat(Object.keys(r)).forEach(function(k){
+        if(seen[k]) return; seen[k] = true;
+        var m = merge3(bb[k], l[k], r[k]);
+        if(m !== undefined) out[k] = m;
+      });
+      return out;
+    }
+    return clone(l);                /* mismo dato editado en los dos a la vez: gana el local */
+  }
+  // Las listas (perfiles, hábitos, equipo) pasan a mapas por id + un orden, para fusionarlas elemento a elemento.
+  function stateToTree(st){
+    var t = {profiles:{}, profileOrder:[], habits:{}, habitOrder:{}, team:{}, teamOrder:[]};
+    (Array.isArray(st.profiles) ? st.profiles : []).forEach(function(p){
+      if(p && p.id){ t.profiles[p.id] = p; t.profileOrder.push(p.id); }
+    });
+    var hb = st.habitsByProfile || {};
+    Object.keys(hb).forEach(function(pid){
+      t.habits[pid] = {}; t.habitOrder[pid] = [];
+      (Array.isArray(hb[pid]) ? hb[pid] : []).forEach(function(h){
+        if(h && h.id){ t.habits[pid][h.id] = h; t.habitOrder[pid].push(h.id); }
+      });
+    });
+    (Array.isArray(st.teamHabits) ? st.teamHabits : []).forEach(function(th){
+      if(th && th.id){ t.team[th.id] = th; t.teamOrder.push(th.id); }
+    });
+    return clone(t);
+  }
+  function treeToState(t){
+    function ordered(map, order){
+      map = map || {};
+      var ids = [], seen = {};
+      (Array.isArray(order) ? order : []).forEach(function(id){ if(map[id]!==undefined && !seen[id]){ ids.push(id); seen[id] = true; } });
+      Object.keys(map).forEach(function(id){ if(!seen[id]) ids.push(id); });
+      return ids.map(function(id){ return map[id]; });
+    }
+    var hbp = {};
+    Object.keys(t.habits || {}).forEach(function(pid){ hbp[pid] = ordered(t.habits[pid], (t.habitOrder || {})[pid]); });
+    return {profiles: ordered(t.profiles, t.profileOrder), habitsByProfile: hbp, teamHabits: ordered(t.team, t.teamOrder)};
+  }
+  // ---------- fin motor de fusión ----------
+
+  function currentLocalTree(){
+    return stateToTree({profiles:profiles, habitsByProfile:allHabitsByProfile(), teamHabits:teamHabits});
+  }
+  function applyTreeToLocal(t){
+    var st = treeToState(t);
+    if(!st.profiles.length) return;
+    profiles = st.profiles; saveProfilesLocalOnly(profiles);
+    Object.keys(st.habitsByProfile).forEach(function(pid){
+      try{ localStorage.setItem(habitsKey(pid), JSON.stringify(st.habitsByProfile[pid])); }catch(e){}
+    });
+    teamHabits = st.teamHabits; saveTeamHabitsLocalOnly();
+    if(!profiles.find(function(p){return p.id===activeProfileId;})) setActiveProfileId(profiles[0].id);
+    habits = load();
+    render();
+    if(Notif) Notif.schedule();
+  }
+  function loadBase(hid){
+    try{ var raw = localStorage.getItem(BASE_PREFIX+hid); return raw ? JSON.parse(raw) : undefined; }catch(e){ return undefined; }
+  }
+  function saveBase(hid, tree){
+    try{ localStorage.setItem(BASE_PREFIX+hid, JSON.stringify(tree)); }catch(e){}
+  }
+
+  var syncing = false, syncAgain = false, syncTimer = null;
+  function scheduleSync(ms){
+    if(!cloudReady || !householdId || !db) return;
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(syncNow, ms || 900);
+  }
+  function cloudPush(){ scheduleSync(900); }
+  function syncNow(){
+    if(!cloudReady || !householdId || !db) return Promise.resolve();
+    if(syncing){ syncAgain = true; return Promise.resolve(); }
+    syncing = true;
+    var hid = householdId, ref = db.collection("households").doc(hid);
+    var base = loadBase(hid), L = null, M = null, retry = false;
+    return db.runTransaction(function(tx){
+      L = currentLocalTree();
+      return tx.get(ref).then(function(snap){
+        if(!snap.exists) throw new Error("grupo inexistente");
+        var d = snap.data();
+        var R = stateToTree({profiles:d.profiles, habitsByProfile:d.habitsByProfile, teamHabits:d.teamHabits});
+        M = merge3(base, L, R);
+        if(!eq(M, R)){
+          var st = treeToState(M);
+          tx.update(ref, {
+            profiles: st.profiles, habitsByProfile: st.habitsByProfile, teamHabits: st.teamHabits,
+            updatedBy: deviceId, updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            joinCode: firebase.firestore.FieldValue.delete()
+          });
+        }
+      });
+    }).then(function(){
+      if(hid!==householdId) return;
+      var cur = currentLocalTree();
+      /* si el usuario tocó algo mientras se sincronizaba, se conserva y se vuelve a sincronizar */
+      var next = eq(cur, L) ? M : merge3(L, cur, M);
+      var hadRemoteNews = !eq(next, cur);
+      if(hadRemoteNews){ applyTreeToLocal(next); toast("🔄 Sincronizado con tu pareja"); }
+      saveBase(hid, M);
+      if(!eq(next, M)) syncAgain = true;
+    }).catch(function(e){
+      console.warn("No se pudo sincronizar", e);
+      var c = e && e.code;
+      retry = (c==="unavailable" || c==="aborted" || c==="deadline-exceeded" || c==="resource-exhausted" || (e && /network|offline/i.test(e.message||"")));
+    }).then(function(){
+      syncing = false;
+      if(syncAgain){ syncAgain = false; scheduleSync(300); }
+      else if(retry){ scheduleSync(30000); }
+    });
+  }
+  window.addEventListener("online", function(){ scheduleSync(500); });
+  document.addEventListener("visibilitychange", function(){ if(!document.hidden) scheduleSync(800); });
   function applyCloudData(data){
     if(Array.isArray(data.profiles) && data.profiles.length>0){
       profiles = data.profiles;
@@ -1119,46 +1283,122 @@
     if(!profiles.find(function(p){return p.id===activeProfileId;})) setActiveProfileId(profiles[0].id);
     habits = load();
     render();
+    if(Notif) Notif.schedule();
   }
-  function cloudStartListening(code){
+  function cloudStartListening(hid){
     if(cloudUnsub){ cloudUnsub(); cloudUnsub=null; }
     if(!db) return;
-    cloudUnsub = db.collection("households").doc(code).onSnapshot(function(snap){
+    cloudUnsub = db.collection("households").doc(hid).onSnapshot(function(snap){
       if(!snap.exists) return;
       var data = snap.data();
+      householdMembers = Array.isArray(data.members) ? data.members.length : 1;
+      inviteInfo = data.inviteCode ? {
+        code: data.inviteCode,
+        expires: (data.inviteExpiresAt && data.inviteExpiresAt.toDate) ? data.inviteExpiresAt.toDate() : null
+      } : null;
       if(data.updatedBy===deviceId) return;
-      applyCloudData(data);
-      toast("🔄 Sincronizado con tu pareja");
-    }, function(err){ console.warn("Error escuchando cambios", err); });
+      scheduleSync(300); /* el motor de fusión lee, combina y aplica los cambios de tu pareja */
+    }, function(err){
+      if(err && err.code==="permission-denied"){
+        cloudLeave();
+        toast("Ya no tienes acceso a esa sincronización");
+        if(activeView==="config") render();
+      } else { console.warn("Error escuchando cambios", err); }
+    });
   }
-  function cloudCreate(){
-    var code = generateHouseholdCode();
-    householdCode = code;
-    try{ localStorage.setItem(HOUSEHOLD_KEY, code); }catch(e){}
-    cloudStartListening(code);
-    cloudPush();
+  function cloudNewInvite(){
+    var user = curUser();
+    if(!db || !user || !householdId) return Promise.reject(new Error("sin sesión"));
+    var hid = householdId, code = generateInviteCode(), old = inviteInfo && inviteInfo.code;
+    var expires = firebase.firestore.Timestamp.fromDate(new Date(Date.now() + INVITE_DAYS*86400000));
+    return db.collection("invites").doc(code).set({householdId:hid, ownerUid:user.uid, expiresAt:expires})
+      .then(function(){
+        return db.collection("households").doc(hid).update({inviteCode:code, inviteExpiresAt:expires, updatedBy:deviceId});
+      })
+      .then(function(){
+        inviteInfo = {code:code, expires:expires.toDate()};
+        if(old) db.collection("invites").doc(old).delete().catch(function(){});
+        return code;
+      });
   }
-  function cloudJoin(code, done){
-    code = (code||"").trim().toUpperCase();
-    if(!code){ toast("Escribe un código"); if(done) done(); return; }
-    if(!db){ toast("La sincronización no está disponible ahora mismo"); if(done) done(); return; }
-    db.collection("households").doc(code).get().then(function(snap){
-      if(!snap.exists){ toast("Ese código no existe todavía"); if(done) done(); return; }
-      applyCloudData(snap.data());
-      householdCode = code;
-      try{ localStorage.setItem(HOUSEHOLD_KEY, code); }catch(e){}
-      cloudStartListening(code);
-      toast("✅ Sincronización activada");
+  function cloudCreate(done){
+    var user = curUser();
+    if(!db || !user){ toast("Inicia sesión primero"); if(done) done(); return; }
+    var ref = db.collection("households").doc();
+    var payload = buildCloudPayload(true);
+    var baseTree = currentLocalTree();
+    payload.members = [user.uid];
+    payload.ownerUid = user.uid;
+    payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+    ref.set(payload).then(function(){
+      householdId = ref.id;
+      try{ localStorage.setItem(HOUSEHOLD_KEY, householdId); }catch(e){}
+      saveBase(householdId, baseTree);
+      cloudStartListening(householdId);
+      return cloudNewInvite();
+    }).then(function(){
+      toast("✅ Sincronización creada");
       if(done) done();
     }).catch(function(e){
-      toast("No se pudo conectar. Revisa tu internet.");
+      console.warn(e);
+      toast("No se pudo crear la sincronización. ¿Están publicadas las reglas de Firestore?");
+      if(done) done();
+    });
+  }
+  function cloudJoin(code, done){
+    var user = curUser();
+    code = (code||"").trim().toUpperCase();
+    if(!code){ toast("Escribe un código"); if(done) done(); return; }
+    if(!db || !user){ toast("Inicia sesión primero"); if(done) done(); return; }
+    db.collection("invites").doc(code).get().then(function(inv){
+      var d = inv.exists ? inv.data() : null;
+      if(!d || !d.householdId || !d.expiresAt || d.expiresAt.toDate().getTime() < Date.now()){
+        toast("Código no válido o caducado"); if(done) done(); return;
+      }
+      if(habits.length>0 && !confirm("Al unirte, tus hábitos de este móvil se sustituirán por los del grupo. ¿Continuar?")){ if(done) done(); return; }
+      var hid = d.householdId;
+      return db.collection("households").doc(hid).update({
+        members: firebase.firestore.FieldValue.arrayUnion(user.uid),
+        joinCode: code
+      }).then(function(){
+        return db.collection("households").doc(hid).get();
+      }).then(function(snap){
+        householdId = hid;
+        try{ localStorage.setItem(HOUSEHOLD_KEY, hid); }catch(e){}
+        applyCloudData(snap.data());
+        saveBase(hid, stateToTree(snap.data()));
+        cloudStartListening(hid);
+        toast("✅ Sincronización activada");
+        if(done) done();
+      });
+    }).catch(function(e){
+      console.warn(e);
+      toast(e && e.code==="permission-denied" ? "Código no válido, caducado o grupo completo" : "No se pudo conectar. Revisa tu internet.");
       if(done) done();
     });
   }
   function cloudLeave(){
+    var hid = householdId, user = curUser();
     if(cloudUnsub){ cloudUnsub(); cloudUnsub=null; }
-    householdCode = null;
-    try{ localStorage.removeItem(HOUSEHOLD_KEY); }catch(e){}
+    householdId = null; inviteInfo = null; householdMembers = 0;
+    try{ localStorage.removeItem(HOUSEHOLD_KEY); if(hid) localStorage.removeItem(BASE_PREFIX+hid); }catch(e){}
+    if(db && user && hid){
+      db.collection("households").doc(hid).update({members: firebase.firestore.FieldValue.arrayRemove(user.uid)}).catch(function(){});
+    }
+  }
+
+  // ---------- cuenta (email + contraseña) ----------
+  function authErrorMsg(e){
+    var c = e && e.code;
+    if(c==="auth/invalid-email") return "El email no es válido";
+    if(c==="auth/user-not-found" || c==="auth/wrong-password" || c==="auth/invalid-credential") return "Email o contraseña incorrectos";
+    if(c==="auth/email-already-in-use") return "Ese email ya tiene una cuenta. Prueba a entrar.";
+    if(c==="auth/weak-password") return "La contraseña debe tener al menos 6 caracteres";
+    if(c==="auth/network-request-failed") return "Sin conexión";
+    if(c==="auth/too-many-requests") return "Demasiados intentos, espera un poco";
+    if(c==="auth/operation-not-allowed") return "El acceso con email no está activado en Firebase";
+    if(c==="auth/requires-recent-login") return "Por seguridad, cierra sesión, vuelve a entrar y repite";
+    return "No se pudo completar la operación";
   }
 
   var theme = localStorage.getItem(THEME_KEY) || "paper";
@@ -1297,6 +1537,7 @@
     try{ localStorage.setItem(habitsKey(activeProfileId), JSON.stringify(habits)); }
     catch(e){ toast("No se pudo guardar (¿modo privado del navegador?)"); }
     cloudPush();
+    if(Notif) Notif.schedule();
   }
 
   // ================= hábitos en equipo =================
@@ -1953,7 +2194,7 @@
     }
     if(isSameDay(date,end)) classes.push("today");
     var hasTextNote = h.notes && h.notes[key];
-    var hasVoiceNote = !!getVoiceNote(h.id, key);
+    var hasVoiceNote = VoiceDB.has(h.id, key);
     var hasNote = hasTextNote || hasVoiceNote;
     if(hasNote) classes.push("has-note");
     var content = showNum ? '<span class="cell-num">'+date.getDate()+'</span>' : '';
@@ -1986,406 +2227,66 @@
   }
   // ================= frase motivadora diaria =================
   var MOTIV_PHRASES = [
-    "El esfuerzo diario no promete rapidez, promete dirección.",
-    "El camino se hace es cómo se construyen las rachas largas.",
-    "Cada día que eliges cuidarte construye algo que ninguna prisa puede igualar.",
-    "Cada casilla que marcas hoy es un voto por la persona que quieres ser.",
-    "La suma de días normales es el único atajo que funciona de verdad.",
-    "Vuelve al hábito, sin dramas, porque nadie cambia de golpe, sino poco a poco.",
-    "Vuelve a intentarlo, porque el progreso vive en lo cotidiano.",
-    "Hoy, como cada día, suma, aunque el resultado tarde en verse.",
-    "El hábito es la base invisible de todo gran cambio.",
-    "Presta atención a cómo te sientes, porque nadie cambia de golpe, sino poco a poco.",
-    "Nadie ve el esfuerzo de hoy, pero es cómo se construyen las rachas largas.",
-    "Empieza aunque no tengas ganas, porque el esfuerzo de hoy no se pierde.",
-    "La disciplina silenciosa de cada día se convierte, con el tiempo, en una vida distinta.",
-    "Cumple con lo que te prometiste, porque nadie cambia de golpe, sino poco a poco.",
-    "Celebra lo pequeño, porque tu futuro se escribe hoy.",
-    "Un hábito sostenido en el tiempo se convierte, con el tiempo, en una vida distinta.",
-    "El que persiste, aunque sea despacio, construye algo que ninguna prisa puede igualar.",
-    "El camino se hace te demuestra que puedes confiar en ti.",
-    "Da el primer paso, porque ser mejor es una decisión diaria.",
-    "La paciencia con uno mismo es un acto de respeto hacia ti mismo.",
-    "Hazlo aunque sea a medias, porque los días suman, no restan.",
-    "Vuelve al hábito, sin dramas, porque mereces la vida que estás construyendo.",
-    "El esfuerzo silencioso es un regalo que te haces a ti mismo.",
-    "Hoy, aunque sea un poco es cómo se construyen las rachas largas.",
-    "El pequeño gesto diario es un regalo que te haces a ti mismo.",
-    "La suma de días normales suma, aunque el resultado tarde en verse.",
-    "No busques excusas, porque lo constante gana a lo intenso.",
-    "Basta con no rendirte hoy para que termina marcando la diferencia.",
-    "Cuando eliges tu hábito antes que tu excusa es cómo se construyen las rachas largas.",
-    "La disciplina silenciosa de cada día es el único atajo que funciona de verdad.",
-    "Un hábito sostenido en el tiempo es un acto de respeto hacia ti mismo.",
-    "El paso de hoy no se nota hoy, pero se nota siempre.",
-    "El paso de hoy no promete rapidez, promete dirección.",
-    "No necesitas sentirte listo para empezar: te demuestra que puedes confiar en ti.",
-    "El que persiste, aunque sea despacio, te acerca un poco más a quien quieres ser.",
-    "No busques excusas, porque el progreso vive en lo cotidiano.",
-    "El esfuerzo de hoy, aunque invisible, pesa más de lo que crees.",
-    "Tu yo del futuro te va a agradecer lo que hagas hoy.",
-    "La paciencia con uno mismo termina marcando la diferencia.",
-    "Da el primer paso, porque los días suman, no restan.",
-    "Cuidar un hábito, día tras día, pesa más de lo que crees.",
-    "El que persiste, aunque sea despacio, te demuestra que puedes confiar en ti.",
-    "Cada vez que cumples con tu palabra es un acto de respeto hacia ti mismo.",
-    "Un paso pequeño, repetido te demuestra que puedes confiar en ti.",
-    "El paso de hoy convierte lo ordinario en extraordinario con el tiempo.",
-    "Cuando eliges tu hábito antes que tu excusa vale más que la perfección de un solo día.",
-    "Lo que haces sin que nadie mire es la base invisible de todo gran cambio.",
-    "Hoy es una página en blanco: escribe algo de lo que te sientas orgulloso.",
-    "El que persiste, aunque sea despacio, deja huella aunque hoy no lo parezca.",
-    "Sé paciente contigo mismo, porque lo constante gana a lo intenso.",
-    "El compromiso contigo mismo no falla si no te rindes.",
-    "Cada mañana es una oportunidad para empezar de nuevo importa más que cualquier arranque de motivación.",
-    "No rompas la cadena, porque ser mejor es una decisión diaria.",
-    "Lo pequeño, hecho con constancia, te demuestra que puedes confiar en ti.",
-    "El esfuerzo silencioso no falla si no te rindes.",
-    "Cada mañana es una oportunidad para empezar de nuevo es la base de cualquier cambio duradero.",
-    "La paciencia diaria no necesita aplausos para valer.",
-    "Confía en el proceso: las rachas se construyen día a día, no de golpe.",
-    "La constancia no se mide en un día, se mide en meses.",
-    "Cada racha empieza con un solo día que decides no saltarte.",
-    "Celebra lo pequeño, porque el progreso vive en lo cotidiano.",
-    "Un hábito sostenido en el tiempo te acerca un poco más a quien quieres ser.",
-    "Da el primer paso, porque mereces la vida que estás construyendo.",
-    "Cuando eliges tu hábito antes que tu excusa se convierte, con el tiempo, en una vida distinta.",
-    "La disciplina tranquila no falla si no te rindes.",
-    "Cuando eliges tu hábito antes que tu excusa termina marcando la diferencia.",
-    "La perseverancia tranquila no promete rapidez, promete dirección.",
-    "Basta con no rendirte hoy para que suma, aunque el resultado tarde en verse.",
-    "Basta con no rendirte hoy para que construye algo que ninguna prisa puede igualar.",
-    "Lo pequeño, hecho con constancia, termina marcando la diferencia.",
-    "Un paso pequeño, repetido es el único atajo que funciona de verdad.",
-    "No busques la motivación perfecta, busca la acción imperfecta.",
-    "La rutina de hoy vale más que la perfección de un solo día.",
-    "La rutina de hoy suma, aunque el resultado tarde en verse.",
-    "El paso de hoy construye lo que la prisa nunca podrá.",
-    "Presta atención a cómo te sientes, porque cada repetición te hace más fuerte.",
-    "No necesitas sentirte listo para empezar: termina marcando la diferencia.",
-    "El esfuerzo diario no se nota hoy, pero se nota siempre.",
-    "Presta atención a cómo te sientes, porque los días suman, no restan.",
-    "El que persiste, aunque sea despacio, es el único atajo que funciona de verdad.",
-    "La paciencia con uno mismo pesa más de lo que crees.",
-    "El pequeño gesto diario no falla si no te rindes.",
-    "El esfuerzo constante, aunque poco vistoso, deja huella aunque hoy no lo parezca.",
-    "No compares tu día 3 con el día 300 de alguien más.",
-    "No te saltes el día, porque cada repetición te hace más fuerte.",
-    "Empieza aunque no tengas ganas, porque el progreso vive en lo cotidiano.",
-    "El cuidado de uno mismo no promete rapidez, promete dirección.",
-    "El pequeño gesto diario no necesita aplausos para valer.",
-    "No hace falta un gran salto: pesa más de lo que crees.",
-    "Cuidar un hábito, día tras día, termina marcando la diferencia.",
-    "El esfuerzo de hoy, aunque invisible, te demuestra que puedes confiar en ti.",
-    "Cada vez que cumples con tu palabra es el único atajo que funciona de verdad.",
-    "El esfuerzo constante, aunque poco vistoso, termina marcando la diferencia.",
-    "El esfuerzo silencioso no se mide en un día, se mide en meses.",
-    "Celebra lo pequeño, porque lo constante gana a lo intenso.",
-    "La constancia vence al talento cuando el talento no es constante.",
-    "La perseverancia tranquila no necesita aplausos para valer.",
-    "Hoy, aunque sea un poco pesa más de lo que crees.",
-    "El camino se hace termina marcando la diferencia.",
-    "La disciplina tranquila no promete rapidez, promete dirección.",
-    "Cumple con lo que te prometiste, porque la racha se cuida un día a la vez.",
-    "Presta atención a cómo te sientes, porque tu futuro se escribe hoy.",
-    "El paso de hoy es un regalo que te haces a ti mismo.",
-    "La paciencia diaria vale incluso en los días grises.",
-    "El esfuerzo de hoy, aunque invisible, te acerca un poco más a quien quieres ser.",
-    "El camino se hace se convierte, con el tiempo, en una vida distinta.",
-    "La rutina de hoy deja huella aunque hoy no lo parezca.",
-    "El esfuerzo diario no se mide en un día, se mide en meses.",
-    "La disciplina es elegir entre lo que quieres ahora y lo que quieres de verdad.",
-    "Hazlo aunque sea a medias, porque nadie cambia de golpe, sino poco a poco.",
-    "No necesitas sentirte listo para empezar: es cómo se construyen las rachas largas.",
-    "Elegir lo que toca, aunque cueste, se convierte, con el tiempo, en una vida distinta.",
-    "Un paso pequeño, repetido es la base de cualquier cambio duradero.",
-    "El esfuerzo diario no falla si no te rindes.",
-    "Sé paciente contigo mismo, porque el esfuerzo de hoy no se pierde.",
-    "Marca tu hábito, porque cada repetición te hace más fuerte.",
-    "Cada vez que cumples con tu palabra vale más que la perfección de un solo día.",
-    "Mejorar no es un destino, es la dirección en la que caminas.",
-    "Confía en tu constancia, porque mereces la vida que estás construyendo.",
-    "La disciplina tranquila convierte lo ordinario en extraordinario con el tiempo.",
-    "El cuidado de uno mismo es la prueba de que te importas de verdad.",
-    "Cada día que eliges cuidarte termina marcando la diferencia.",
-    "Vuelve a intentarlo, porque el esfuerzo de hoy no se pierde.",
-    "La disciplina tranquila construye lo que la prisa nunca podrá.",
-    "Cada día que eliges cuidarte es lo que de verdad cambia las cosas.",
-    "El esfuerzo diario es un regalo que te haces a ti mismo.",
-    "No necesitas motivación todos los días, necesitas el hábito de empezar igual.",
-    "Cada repetición vale incluso en los días grises.",
-    "Lo pequeño, hecho con constancia, es lo que de verdad cambia las cosas.",
-    "Cumple con lo que te prometiste, porque tu futuro se escribe hoy.",
-    "Lo que repites en silencio importa más que cualquier arranque de motivación.",
-    "El hábito no falla si no te rindes.",
-    "Cada repetición es la base invisible de todo gran cambio.",
-    "Elegir lo que toca, aunque cueste, vale más que la perfección de un solo día.",
-    "Lo que repites en silencio deja huella aunque hoy no lo parezca.",
-    "Hoy, como cada día, termina marcando la diferencia.",
-    "Cada día que eliges cuidarte deja huella aunque hoy no lo parezca.",
-    "Vuelve a intentarlo, porque nadie cambia de golpe, sino poco a poco.",
-    "Un hábito sostenido en el tiempo es el único atajo que funciona de verdad.",
-    "La perseverancia tranquila convierte lo ordinario en extraordinario con el tiempo.",
-    "Hazlo aunque sea a medias, porque mereces la vida que estás construyendo.",
-    "No necesitas sentirte listo para empezar: deja huella aunque hoy no lo parezca.",
-    "El que persiste, aunque sea despacio, es la base de cualquier cambio duradero.",
-    "El esfuerzo de hoy, aunque invisible, suma, aunque el resultado tarde en verse.",
-    "Cumple con lo que te prometiste, porque mereces la vida que estás construyendo.",
-    "Cada marca en el calendario no se nota hoy, pero se nota siempre.",
-    "Hazlo aunque sea a medias, porque cada repetición te hace más fuerte.",
-    "Cada mañana es una oportunidad para empezar de nuevo es cómo se construyen las rachas largas.",
-    "No rompas la cadena, porque lo constante gana a lo intenso.",
-    "El esfuerzo constante, aunque poco vistoso, pesa más de lo que crees.",
-    "Lo que repites en silencio es la base de cualquier cambio duradero.",
-    "Nadie ve el esfuerzo de hoy, pero termina marcando la diferencia.",
-    "Cada día que eliges cuidarte suma, aunque el resultado tarde en verse.",
-    "Cada mañana es una oportunidad para empezar de nuevo es el único atajo que funciona de verdad.",
-    "El esfuerzo diario convierte lo ordinario en extraordinario con el tiempo.",
-    "El cuidado de uno mismo no se mide en un día, se mide en meses.",
-    "Hoy, como cada día, se convierte, con el tiempo, en una vida distinta.",
-    "Marca tu hábito, porque nadie cambia de golpe, sino poco a poco.",
-    "La paciencia con uno mismo te demuestra que puedes confiar en ti.",
-    "El esfuerzo diario vale incluso en los días grises.",
-    "Cumple con lo que te prometiste, porque cada repetición te hace más fuerte.",
-    "Cuidar un hábito, día tras día, es lo que de verdad cambia las cosas.",
-    "La disciplina tranquila vale incluso en los días grises.",
-    "El esfuerzo de hoy, aunque invisible, termina marcando la diferencia.",
-    "La paciencia con uno mismo es lo que de verdad cambia las cosas.",
-    "La suma de días normales es un acto de respeto hacia ti mismo.",
-    "Confía en tu constancia, porque cada repetición te hace más fuerte.",
-    "La paciencia con uno mismo deja huella aunque hoy no lo parezca.",
-    "La rutina de hoy te acerca un poco más a quien quieres ser.",
-    "Cuando eliges tu hábito antes que tu excusa deja huella aunque hoy no lo parezca.",
-    "Sé paciente contigo mismo, porque tu futuro se escribe hoy.",
-    "La rutina cuidada vale incluso en los días grises.",
-    "Lo que haces sin que nadie mire es la prueba de que te importas de verdad.",
-    "La perseverancia tranquila no se nota hoy, pero se nota siempre.",
-    "Confía en tu constancia, porque el progreso vive en lo cotidiano.",
-    "Cuidar un hábito, día tras día, es la base de cualquier cambio duradero.",
-    "La disciplina silenciosa de cada día te demuestra que puedes confiar en ti.",
-    "Cuando eliges tu hábito antes que tu excusa es la base de cualquier cambio duradero.",
-    "Confía en tu constancia, porque ser mejor es una decisión diaria.",
-    "Cuida tus hábitos y ellos cuidarán de tu futuro.",
-    "No te saltes el día, porque mereces la vida que estás construyendo.",
-    "No hace falta un gran salto: te acerca un poco más a quien quieres ser.",
-    "No hace falta un gran salto: termina marcando la diferencia.",
-    "Un hábito sostenido en el tiempo te demuestra que puedes confiar en ti.",
-    "La paciencia diaria es la base invisible de todo gran cambio.",
-    "Confía en tu constancia, porque lo constante gana a lo intenso.",
-    "Marca tu hábito, porque mereces la vida que estás construyendo.",
-    "Tu mejor versión no llega de golpe: deja huella aunque hoy no lo parezca.",
-    "Cada día que eliges cuidarte es la base de cualquier cambio duradero.",
-    "El pequeño gesto diario no se nota hoy, pero se nota siempre.",
-    "El esfuerzo diario es la prueba de que te importas de verdad.",
-    "Da el primer paso, porque la racha se cuida un día a la vez.",
-    "Vuelve a intentarlo, porque mereces la vida que estás construyendo.",
-    "Basta con no rendirte hoy para que vale más que la perfección de un solo día.",
-    "No necesitas sentirte listo para empezar: te acerca un poco más a quien quieres ser.",
-    "No necesitas sentirte listo para empezar: se convierte, con el tiempo, en una vida distinta.",
-    "Lo que repites en silencio pesa más de lo que crees.",
-    "La constancia construye lo que la prisa nunca podrá.",
-    "Cada marca en el calendario no promete rapidez, promete dirección.",
-    "No hace falta un gran salto: se convierte, con el tiempo, en una vida distinta.",
-    "El esfuerzo de hoy, aunque invisible, es la base de cualquier cambio duradero.",
-    "El camino se hace es lo que de verdad cambia las cosas.",
-    "Lo pequeño, hecho con constancia, es un acto de respeto hacia ti mismo.",
-    "El esfuerzo constante, aunque poco vistoso, importa más que cualquier arranque de motivación.",
-    "Cada marca en el calendario convierte lo ordinario en extraordinario con el tiempo.",
-    "El camino se hace pesa más de lo que crees.",
-    "Cada vez que cumples con tu palabra pesa más de lo que crees.",
-    "El esfuerzo de hoy, aunque invisible, se convierte, con el tiempo, en una vida distinta.",
-    "Cada vez que cumples con tu palabra suma, aunque el resultado tarde en verse.",
-    "Hoy, aunque sea un poco te demuestra que puedes confiar en ti.",
-    "Hoy, como cada día, es cómo se construyen las rachas largas.",
-    "La rutina de hoy es un acto de respeto hacia ti mismo.",
-    "El esfuerzo silencioso no necesita aplausos para valer.",
-    "Cuando eliges tu hábito antes que tu excusa es el único atajo que funciona de verdad.",
-    "Basta con no rendirte hoy para que te acerca un poco más a quien quieres ser.",
-    "La rutina cuidada es la prueba de que te importas de verdad.",
-    "El hábito construye lo que la prisa nunca podrá.",
-    "La rutina de hoy termina marcando la diferencia.",
-    "Cada día que eliges cuidarte importa más que cualquier arranque de motivación.",
-    "Confía en tu constancia, porque la racha se cuida un día a la vez.",
-    "Hoy, como cada día, te acerca un poco más a quien quieres ser.",
-    "Cuidar un hábito, día tras día, se convierte, con el tiempo, en una vida distinta.",
-    "Repite lo que te funciona, porque nadie cambia de golpe, sino poco a poco.",
-    "El paso de hoy es la prueba de que te importas de verdad.",
-    "Marca tu hábito, porque ser mejor es una decisión diaria.",
-    "El esfuerzo silencioso construye lo que la prisa nunca podrá.",
-    "Lo pequeño, hecho con constancia, pesa más de lo que crees.",
-    "La rutina de hoy es lo que de verdad cambia las cosas.",
-    "Nadie ve el esfuerzo de hoy, pero construye algo que ninguna prisa puede igualar.",
-    "Marca tu hábito, porque lo constante gana a lo intenso.",
-    "Empieza aunque no tengas ganas, porque mereces la vida que estás construyendo.",
-    "No te saltes el día, porque nadie cambia de golpe, sino poco a poco.",
-    "No rompas la cadena, porque tu futuro se escribe hoy.",
-    "La disciplina tranquila es la base invisible de todo gran cambio.",
-    "La rutina cuidada convierte lo ordinario en extraordinario con el tiempo.",
-    "Hoy, como cada día, te demuestra que puedes confiar en ti.",
-    "Lo que haces sin que nadie mire no promete rapidez, promete dirección.",
-    "Hazlo aunque sea a medias, porque el esfuerzo de hoy no se pierde.",
-    "Cada repetición es la prueba de que te importas de verdad.",
-    "Repite lo que te funciona, porque los días suman, no restan.",
-    "Los hábitos son la letra pequeña de una vida que merece la pena.",
-    "Lo que repites en silencio se convierte, con el tiempo, en una vida distinta.",
-    "La constancia es la base invisible de todo gran cambio.",
-    "Presta atención a cómo te sientes, porque el esfuerzo de hoy no se pierde.",
-    "Basta con no rendirte hoy para que es lo que de verdad cambia las cosas.",
-    "Cuando eliges tu hábito antes que tu excusa te acerca un poco más a quien quieres ser.",
-    "El compromiso contigo mismo es más fuerte que cualquier motivación pasajera.",
-    "Cumple con lo que te prometiste, porque el progreso vive en lo cotidiano.",
-    "Basta con no rendirte hoy para que importa más que cualquier arranque de motivación.",
-    "El esfuerzo constante, aunque poco vistoso, te acerca un poco más a quien quieres ser.",
-    "Nadie ve el esfuerzo de hoy, pero te demuestra que puedes confiar en ti.",
-    "Cumple con lo que te prometiste, porque lo constante gana a lo intenso.",
-    "Repite lo que te funciona, porque el esfuerzo de hoy no se pierde.",
-    "El pequeño gesto diario construye lo que la prisa nunca podrá.",
-    "La constancia vale incluso en los días grises.",
-    "El que persiste, aunque sea despacio, vale más que la perfección de un solo día.",
-    "Elegir lo que toca, aunque cueste, deja huella aunque hoy no lo parezca.",
-    "Nadie ve el esfuerzo de hoy, pero deja huella aunque hoy no lo parezca.",
-    "Vuelve a intentarlo, porque los días suman, no restan.",
-    "Cuando eliges tu hábito antes que tu excusa te demuestra que puedes confiar en ti.",
-    "Da el primer paso, porque nadie cambia de golpe, sino poco a poco.",
-    "El que persiste, aunque sea despacio, es lo que de verdad cambia las cosas.",
-    "El cuidado de uno mismo es la base invisible de todo gran cambio.",
-    "La disciplina tranquila es la prueba de que te importas de verdad.",
-    "Basta con no rendirte hoy para que es el único atajo que funciona de verdad.",
-    "La disciplina silenciosa de cada día termina marcando la diferencia.",
-    "No necesitas sentirte listo para empezar: construye algo que ninguna prisa puede igualar.",
-    "No necesitas sentirte listo para empezar: vale más que la perfección de un solo día.",
-    "Elegir lo que toca, aunque cueste, importa más que cualquier arranque de motivación.",
-    "La rutina cuidada no se mide en un día, se mide en meses.",
-    "Sé paciente contigo mismo, porque los días suman, no restan.",
-    "El esfuerzo constante, aunque poco vistoso, es un acto de respeto hacia ti mismo.",
-    "Ser mejor cada día no significa hacerlo todo, significa no rendirte.",
-    "El hábito no se mide en un día, se mide en meses.",
-    "Presta atención a cómo te sientes, porque ser mejor es una decisión diaria.",
-    "Cada repetición convierte lo ordinario en extraordinario con el tiempo.",
-    "La paciencia con uno mismo construye algo que ninguna prisa puede igualar.",
-    "Cuidar un hábito, día tras día, deja huella aunque hoy no lo parezca.",
-    "Un hábito sostenido en el tiempo es lo que de verdad cambia las cosas.",
-    "Repite lo que te funciona, porque ser mejor es una decisión diaria.",
-    "No hace falta un gran salto: es cómo se construyen las rachas largas.",
-    "El camino se hace construye algo que ninguna prisa puede igualar.",
-    "Celebra lo pequeño, porque la racha se cuida un día a la vez.",
-    "No necesitas sentirte listo para empezar: es un acto de respeto hacia ti mismo.",
-    "La constancia es la prueba de que te importas de verdad.",
-    "Lo que repites en silencio es el único atajo que funciona de verdad.",
-    "El esfuerzo diario es más fuerte que cualquier motivación pasajera.",
-    "Basta con no rendirte hoy para que pesa más de lo que crees.",
-    "La constancia es un regalo que te haces a ti mismo.",
-    "La suma de días normales termina marcando la diferencia.",
-    "Lo que repites en silencio te acerca un poco más a quien quieres ser.",
-    "Lo pequeño, hecho con constancia, suma, aunque el resultado tarde en verse.",
-    "La constancia convierte lo ordinario en extraordinario con el tiempo.",
-    "Cuando eliges tu hábito antes que tu excusa suma, aunque el resultado tarde en verse.",
-    "Celebra lo pequeño, porque el esfuerzo de hoy no se pierde.",
-    "El paso de hoy es la base invisible de todo gran cambio.",
-    "Nadie ve el esfuerzo de hoy, pero es un acto de respeto hacia ti mismo.",
-    "La rutina de hoy es el único atajo que funciona de verdad.",
-    "El camino se hace suma, aunque el resultado tarde en verse.",
-    "Vuelve a intentarlo, porque lo constante gana a lo intenso.",
-    "Un paso pequeño, repetido es un acto de respeto hacia ti mismo.",
-    "El cambio real ocurre en los días normales, no en los extraordinarios.",
-    "El camino se hace es un acto de respeto hacia ti mismo.",
-    "Un paso pequeño, repetido suma, aunque el resultado tarde en verse.",
-    "Un paso pequeño, repetido te acerca un poco más a quien quieres ser.",
-    "Sé paciente contigo mismo, porque la racha se cuida un día a la vez.",
-    "El esfuerzo constante, aunque poco vistoso, es la base de cualquier cambio duradero.",
-    "No te saltes el día, porque la racha se cuida un día a la vez.",
-    "Tu mejor versión no llega de golpe: es un acto de respeto hacia ti mismo.",
-    "Basta con no rendirte hoy para que es un acto de respeto hacia ti mismo.",
-    "Cada mañana es una oportunidad para empezar de nuevo vale más que la perfección de un solo día.",
-    "Confía en tu constancia, porque los días suman, no restan.",
-    "El esfuerzo constante, aunque poco vistoso, construye algo que ninguna prisa puede igualar.",
-    "Basta con no rendirte hoy para que es cómo se construyen las rachas largas.",
-    "Marca tu hábito, porque el esfuerzo de hoy no se pierde.",
-    "Cuando eliges tu hábito antes que tu excusa es lo que de verdad cambia las cosas.",
-    "No hace falta un gran salto: vale más que la perfección de un solo día.",
-    "Empieza aunque no tengas ganas, porque lo constante gana a lo intenso.",
-    "Cada marca en el calendario es más fuerte que cualquier motivación pasajera.",
-    "El esfuerzo silencioso no se nota hoy, pero se nota siempre.",
-    "Hoy, aunque sea un poco suma, aunque el resultado tarde en verse.",
-    "Cada marca en el calendario construye lo que la prisa nunca podrá.",
-    "Repite lo que te funciona, porque el progreso vive en lo cotidiano.",
-    "Cada marca en el calendario es un regalo que te haces a ti mismo.",
+    "Hoy no tienes que hacerlo perfecto. Solo tienes que hacerlo.",
+    "Una racha larga es la suma de muchos días normales.",
+    "Empieza pequeño. Lo importante es que mañana puedas repetirlo.",
+    "No esperes a tener ganas: las ganas suelen llegar después de empezar.",
+    "Cada casilla marcada es un voto por la persona que quieres ser.",
+    "La constancia le gana al talento cuando el talento descansa.",
+    "Un mal día no rompe un hábito; abandonarlo sí. Vuelve mañana.",
+    "Haz hoy lo que tu yo del futuro te va a agradecer.",
     "Avanzar despacio sigue siendo avanzar.",
-    "Tu mejor versión no llega de golpe: construye algo que ninguna prisa puede igualar.",
-    "Hoy, aunque sea un poco es un acto de respeto hacia ti mismo.",
-    "Repite lo que te funciona, porque lo constante gana a lo intenso.",
-    "El compromiso contigo mismo es la prueba de que te importas de verdad.",
-    "Hoy, como cada día, construye algo que ninguna prisa puede igualar.",
-    "Tu mejor versión no llega de golpe: te demuestra que puedes confiar en ti.",
-    "La disciplina silenciosa de cada día te acerca un poco más a quien quieres ser.",
-    "Tu mejor versión no llega de golpe: termina marcando la diferencia.",
-    "Repite lo que te funciona, porque tu futuro se escribe hoy.",
-    "Un paso pequeño, repetido vale más que la perfección de un solo día.",
-    "Nadie ve el esfuerzo de hoy, pero pesa más de lo que crees.",
-    "Cuidar un hábito, día tras día, es el único atajo que funciona de verdad.",
-    "Hoy, aunque sea un poco es lo que de verdad cambia las cosas.",
-    "Basta con no rendirte hoy para que se convierte, con el tiempo, en una vida distinta.",
-    "Hazlo aunque sea a medias, porque la racha se cuida un día a la vez.",
-    "No se trata de tener tiempo, se trata de hacerle hueco a lo importante.",
-    "El pequeño gesto diario es más fuerte que cualquier motivación pasajera.",
-    "Lo que haces sin que nadie mire no falla si no te rindes.",
-    "El esfuerzo constante, aunque poco vistoso, se convierte, con el tiempo, en una vida distinta.",
-    "Presta atención a cómo te sientes, porque el progreso vive en lo cotidiano.",
-    "Preséntate, aunque sea un poco, aunque sea despacio.",
-    "La rutina cuidada es un regalo que te haces a ti mismo.",
-    "Cada marca en el calendario no necesita aplausos para valer.",
-    "Cada vez que cumples con tu palabra es cómo se construyen las rachas largas.",
-    "El esfuerzo diario construye lo que la prisa nunca podrá.",
-    "Cuidar un hábito, día tras día, construye algo que ninguna prisa puede igualar.",
-    "El esfuerzo constante, aunque poco vistoso, es lo que de verdad cambia las cosas.",
-    "Vuelve al hábito, sin dramas, porque lo constante gana a lo intenso.",
-    "Cada marca en el calendario no se mide en un día, se mide en meses.",
-    "La suma de días normales te demuestra que puedes confiar en ti.",
-    "La rutina de hoy construye algo que ninguna prisa puede igualar.",
-    "El esfuerzo de hoy, aunque invisible, construye algo que ninguna prisa puede igualar.",
-    "Nadie ve el esfuerzo de hoy, pero importa más que cualquier arranque de motivación.",
-    "Vuelve a intentarlo, porque cada repetición te hace más fuerte.",
-    "Vuelve a intentarlo, porque tu futuro se escribe hoy.",
-    "Cada mañana es una oportunidad para empezar de nuevo construye algo que ninguna prisa puede igualar.",
-    "La constancia no necesita aplausos para valer.",
-    "La paciencia con uno mismo se convierte, con el tiempo, en una vida distinta.",
-    "Hoy, aunque sea un poco te acerca un poco más a quien quieres ser.",
-    "Cada mañana es una oportunidad para empezar de nuevo te acerca un poco más a quien quieres ser.",
-    "Elegir lo que toca, aunque cueste, construye algo que ninguna prisa puede igualar.",
-    "La paciencia con uno mismo te acerca un poco más a quien quieres ser.",
-    "Tu mejor versión no llega de golpe: es la base de cualquier cambio duradero.",
-    "Elegir lo que toca, aunque cueste, es el único atajo que funciona de verdad.",
-    "Un hábito sostenido en el tiempo es cómo se construyen las rachas largas.",
-    "El esfuerzo silencioso es más fuerte que cualquier motivación pasajera.",
-    "Cuidar un hábito, día tras día, importa más que cualquier arranque de motivación.",
-    "La rutina de hoy es la base de cualquier cambio duradero.",
-    "El esfuerzo de hoy, aunque invisible, importa más que cualquier arranque de motivación.",
-    "El esfuerzo constante, aunque poco vistoso, suma, aunque el resultado tarde en verse.",
-    "Tu mejor versión no llega de golpe: te acerca un poco más a quien quieres ser.",
-    "Cada marca en el calendario es la prueba de que te importas de verdad.",
-    "Cada repetición no necesita aplausos para valer.",
-    "El esfuerzo de hoy, aunque invisible, deja huella aunque hoy no lo parezca.",
-    "Cuando eliges tu hábito antes que tu excusa construye algo que ninguna prisa puede igualar.",
-    "Nadie ve el esfuerzo de hoy, pero se convierte, con el tiempo, en una vida distinta.",
-    "Lo que haces sin que nadie mire es un regalo que te haces a ti mismo.",
-    "Basta con no rendirte hoy para que es la base de cualquier cambio duradero.",
-    "Vuelve a intentarlo, porque la racha se cuida un día a la vez.",
-    "La paciencia con uno mismo es la base de cualquier cambio duradero.",
-    "Cada vez que cumples con tu palabra importa más que cualquier arranque de motivación.",
-    "El compromiso contigo mismo no se nota hoy, pero se nota siempre.",
-    "Tu mejor versión no llega de golpe: se convierte, con el tiempo, en una vida distinta.",
-    "Cada repetición no se mide en un día, se mide en meses.",
-    "Cada mañana es una oportunidad para empezar de nuevo es lo que de verdad cambia las cosas.",
-    "Tu mejor versión no llega de golpe: es cómo se construyen las rachas largas.",
-    "La rutina de hoy es cómo se construyen las rachas largas.",
-    "La paciencia con uno mismo vale más que la perfección de un solo día.",
-    "El progreso no se nota de un día para otro, pero se nota siempre al mirar atrás.",
-    "Cada día que eliges cuidarte vale más que la perfección de un solo día.",
-    "Un hábito sostenido en el tiempo construye algo que ninguna prisa puede igualar.",
-    "El compromiso contigo mismo no necesita aplausos para valer.",
-    "Confía en tu constancia, porque el esfuerzo de hoy no se pierde.",
-    "El esfuerzo de hoy, aunque invisible, es cómo se construyen las rachas largas.",
-    "Cuidar un hábito, día tras día, suma, aunque el resultado tarde en verse."
+    "No compares tu día 3 con el día 300 de otra persona.",
+    "El hábito más difícil es siempre el de empezar. Ya casi lo tienes.",
+    "Si hoy cuesta, hazlo en versión mínima. Cuenta igual.",
+    "Lo que repites cada día termina definiéndote.",
+    "No hace falta motivación, hace falta un sistema. Y tú ya tienes uno.",
+    "Pequeños pasos, todos los días, llegan más lejos que un gran salto de vez en cuando.",
+    "La disciplina es elegir entre lo que quieres ahora y lo que quieres de verdad.",
+    "Hoy es una buena oportunidad para sumar un día más.",
+    "No tienes que ser el mejor, solo mejor que ayer.",
+    "Cuando te canses, descansa, pero no abandones.",
+    "Tu racha no es un número: es la prueba de que cumples lo que te prometes.",
+    "Lo difícil no es hacerlo una vez, sino volver a hacerlo mañana.",
+    "Cada día que cumples, te cuesta un poco menos el siguiente.",
+    "El progreso casi nunca se nota hoy, pero se nota al mirar atrás.",
+    "Haz lo que toca, aunque sea a medias. A medias también suma.",
+    "Si te fallas un día, no pasa nada. Lo que importa es el siguiente.",
+    "Tu futuro se construye con lo que haces hoy, no con lo que piensas hacer.",
+    "La paciencia contigo mismo también es disciplina.",
+    "No busques la motivación perfecta: busca la acción imperfecta.",
+    "Hoy puede ser el día en que todo encaje. Empieza por el primer hábito.",
+    "La rutina de hoy es la libertad de mañana.",
+    "Quien cuida sus hábitos cuida su vida.",
+    "Haz que sea tan fácil que no puedas decir que no.",
+    "Un hábito no se construye con intensidad, sino con repetición.",
+    "Estás más cerca de lo que crees. Sigue.",
+    "Los grandes cambios empiezan con decisiones muy pequeñas.",
+    "Hoy toca un día más en la cadena. No la rompas.",
+    "Mereces la versión de ti que estás construyendo.",
+    "Lo importante no es la velocidad, sino la dirección.",
+    "Un día a la vez es la única forma de hacer algo grande.",
+    "Si lo haces con ganas, bien. Si lo haces sin ganas, mejor: eso es constancia.",
+    "No necesitas hacerlo todo hoy. Necesitas hacer lo de hoy.",
+    "Cada vez que eliges tu hábito antes que la excusa, ganas confianza en ti.",
+    "Lo que haces cuando nadie mira es lo que más te cambia.",
+    "Celebra los días pequeños: son los que sostienen los grandes.",
+    "Hoy no te pido más que empezar. El resto viene solo.",
+    "El cambio real ocurre en los días normales, no en los extraordinarios.",
+    "Tu yo de dentro de un año ya está agradeciéndote este día.",
+    "Cuidarte no es un lujo, es una rutina.",
+    "Un hábito sólido no necesita aplausos para seguir en pie.",
+    "Si el plan no funciona, cambia el plan, no el objetivo.",
+    "Marcar el día es la parte pequeña; hacerlo es la que cuenta. Hazlo.",
+    "No es magia, es repetición. Y tú sabes repetir.",
+    "Las rachas no se rompen de golpe: se aflojan un día a la vez. Hoy aprieta un poco.",
+    "Hoy suma. Mañana ya verás lo que se ha acumulado.",
+    "Convertirte en alguien constante es un trabajo de todos los días, y ya lo estás haciendo.",
+    "Haz primero lo importante y el día se ordena solo.",
+    "Cada hábito cumplido es una promesa que te cumples a ti.",
+    "La mejor hora para empezar fue ayer. La segunda mejor es ahora.",
+    "Lo que hoy parece un esfuerzo, mañana será tu normalidad.",
+    "Respira, empieza y no pienses en el final. Solo en el primer paso."
   ];
   var MOTIV_KEY = "habitgrid_motiv_state_v1";
   function loadMotivState(){
@@ -3037,10 +2938,10 @@
   function viewConfig(){
     var html = '<div class="settings-list">';
     html += settingRow("perfil","👤","Perfil", currentProfile().name);
-    html += settingRow("general","⚙️","General","Sin cuenta · todo local");
+    html += settingRow("general","⚙️","General","Datos en este dispositivo");
     html += settingRow("tema","🎨","Tema", theme==="auto" ? "Automático" : (theme==="dark" ? "Oscuro" : "Claro"));
     html += settingRow("fondo","🖌️","Color de fondo","");
-    html += settingRow("avisos","🔔","Avisos del navegador", (typeof Notification!=="undefined" && Notification.permission==="granted") ? "Activados" : "Desactivados");
+    html += settingRow("avisos","🔔","Avisos", (Notif ? Notif.granted() : (typeof Notification!=="undefined" && Notification.permission==="granted")) ? "Activados" : "Desactivados");
     html += settingRow("recordatorio","💬","Enviar recordatorio","");
     html += settingRow("diario","⏰","Recordatorio diario", localStorage.getItem(DAILY_KEY) || "Desactivado");
     html += settingRow("comparativa","🤝","Comparativa de la semana","");
@@ -3050,7 +2951,8 @@
     html += settingRow("insights","🧠","Insights","");
     html += settingRow("equipo","🤝","Hábitos en equipo", teamHabits.length ? String(teamHabits.length) : "");
     html += settingRow("reordenar","↕️","Reordenar hábitos","");
-    html += settingRow("sync","🔗","Sincronización", householdCode ? "Activada" : "Desactivada");
+    html += settingRow("cuenta","🔐","Cuenta", curUser() ? curUser().email : "Sin iniciar sesión");
+    html += settingRow("sync","🔗","Sincronización", householdId ? "Activada" : "Desactivada");
     html += settingRow("exportar","🔄","Exportar / importar hábitos","");
     html += settingRow("archivados","🗄️","Hábitos archivados", habits.filter(function(h){return h.archived;}).length+"");
     html += settingRow("acerca","ℹ️","Acerca de","");
@@ -3631,6 +3533,7 @@
     document.getElementById("btnAddTop").style.display = (activeView==="config"||activeView==="jardin") ? "none" : "flex";
     document.getElementById("btnSearchTop").style.display = (activeView==="config"||activeView==="jardin") ? "none" : "flex";
     document.getElementById("btnTemplatesTop").style.display = (activeView==="config"||activeView==="jardin") ? "none" : "flex";
+    if(FaceLock) FaceLock.refreshButton();
 
     var app = document.getElementById("app");
     if(activeView==="hoy") app.innerHTML = viewHoy();
@@ -3732,7 +3635,7 @@
     else if(a==="stat-prev"){ statYear--; render(); }
     else if(a==="stat-next"){ statYear++; render(); }
     else if(a==="setting-perfil") openProfileModal();
-    else if(a==="setting-general") openAbout("General","Rachario funciona sin cuentas ni conexión a internet: todo lo que registras se guarda solo en este navegador, en este archivo.");
+    else if(a==="setting-general") openAbout("General","Rachario funciona sin conexión: todo lo que registras se guarda en este dispositivo. La cuenta y la sincronización con tu pareja son opcionales y solo se activan si tú lo decides.");
     else if(a==="setting-tema") openThemeModal();
     else if(a==="setting-fondo") openBgModal();
     else if(a==="setting-avisos") openNotifModal();
@@ -3744,11 +3647,12 @@
     else if(a==="setting-constancia") openJointHeatmapModal();
     else if(a==="setting-equipo") openTeamModal();
     else if(a==="setting-reordenar") openReorderModal();
+    else if(a==="setting-cuenta") openAccountModal();
     else if(a==="setting-sync") openSyncModal();
     else if(a==="setting-diario") openDailyReminderModal();
     else if(a==="setting-exportar") document.getElementById("overlayBackup").classList.add("open");
     else if(a==="setting-archivados") openArchivedModal();
-    else if(a==="setting-acerca") openAbout("Acerca de","Rachario — inspirado en HabitGrid, hecho a medida. Sin anuncios, sin cuentas, sin nube: tus datos son solo tuyos. Usa \"Exportar hábitos\" de vez en cuando como copia de seguridad.");
+    else if(a==="setting-acerca") openAbout("Acerca de","Rachario — inspirado en HabitGrid, hecho a medida. Sin anuncios: tus datos son solo tuyos. Usa \"Exportar hábitos\" de vez en cuando como copia de seguridad.");
   });
 
   document.getElementById("app").addEventListener("change", function(e){
@@ -4072,6 +3976,7 @@
     if(!editingId) return;
     var h = habits.find(function(x){return x.id===editingId;});
     if(confirm('¿Eliminar "'+h.name+'" y todo su historial? No se puede deshacer.')){
+      VoiceDB.delHabit(editingId);
       habits = habits.filter(function(x){return x.id!==editingId;});
       save(); closeModal(); render();
     }
@@ -4233,6 +4138,7 @@
           '<div class="habit-icon" style="background:'+hexAlpha(p.color||PROFILE_COLORS[0],0.22)+'; width:30px; height:30px; font-size:14px;">'+(p.name?p.name.charAt(0).toUpperCase():"?")+'</div>'+
           '<div class="habit-name">'+escapeHtml(p.name)+(isActive?' · <span style="color:var(--accent);">activo</span>':'')+'</div>'+
           '<button class="icon-btn" data-rename-profile="'+p.id+'" title="Renombrar">✎</button>'+
+          '<button class="icon-btn" data-lock-profile="'+p.id+'" title="Bloquear con Face ID">'+(FaceLock.isLocked(p.id)?"🔒":"🔓")+'</button>'+
           (isActive ? '' : '<button class="btn ghost small" data-switch-profile="'+p.id+'">Cambiar</button>')+
         '</div>';
       }).join("");
@@ -4252,9 +4158,10 @@
       document.getElementById("aboutText").querySelectorAll("[data-switch-profile]").forEach(function(b){
         b.addEventListener("click", function(){
           var id = b.getAttribute("data-switch-profile");
-          switchProfile(id);
-          document.getElementById("overlayAbout").classList.remove("open");
-          toast("Perfil activo: "+currentProfile().name);
+          FaceLock.switchTo(id, function(){
+            document.getElementById("overlayAbout").classList.remove("open");
+            toast("Perfil activo: "+currentProfile().name);
+          });
         });
       });
       document.getElementById("aboutText").querySelectorAll("[data-rename-profile]").forEach(function(b){
@@ -4263,6 +4170,11 @@
           draw();
           var inp = document.getElementById("inpRenameProfile");
           if(inp){ inp.focus(); inp.select(); }
+        });
+      });
+      document.getElementById("aboutText").querySelectorAll("[data-lock-profile]").forEach(function(b){
+        b.addEventListener("click", function(){
+          FaceLock.toggle(b.getAttribute("data-lock-profile")).then(function(){ draw(); });
         });
       });
       var saveBtn = document.querySelector("[data-save-rename]");
@@ -4292,6 +4204,7 @@
   }
 
   function ensureNotifPermission(){
+    if(Notif){ Notif.request(); return; }
     if(typeof Notification==="undefined") return;
     if(Notification.permission==="default"){ Notification.requestPermission(); }
   }
@@ -4331,33 +4244,105 @@
     }
   }
 
-  function voiceNoteKey(habitId, dateStr){ return "habitgrid_voice_"+habitId+"_"+dateStr; }
-  function getVoiceNote(habitId, dateStr){
-    try{ return localStorage.getItem(voiceNoteKey(habitId,dateStr)); }catch(e){ return null; }
-  }
-  function setVoiceNote(habitId, dateStr, dataUrl){
-    try{
-      if(dataUrl) localStorage.setItem(voiceNoteKey(habitId,dateStr), dataUrl);
-      else localStorage.removeItem(voiceNoteKey(habitId,dateStr));
-    }catch(e){ toast("No se pudo guardar el audio (¿demasiado largo o sin espacio?)"); }
-  }
+  // Notas de voz: se guardan como Blob en IndexedDB (no en localStorage).
+  var VoiceDB = (function(){
+    var DB_NAME = "rachario_voice", STORE = "notes", PREFIX = "habitgrid_voice_";
+    var dbp = null, keys = {};
+    function key(habitId, dateStr){ return PREFIX+habitId+"_"+dateStr; }
+    function open(){
+      if(dbp) return dbp;
+      dbp = new Promise(function(res, rej){
+        if(!window.indexedDB){ rej(new Error("IndexedDB no disponible")); return; }
+        var r = indexedDB.open(DB_NAME, 1);
+        r.onupgradeneeded = function(){ r.result.createObjectStore(STORE); };
+        r.onsuccess = function(){ res(r.result); };
+        r.onerror = function(){ rej(r.error); };
+      });
+      return dbp;
+    }
+    function run(mode, fn){
+      return open().then(function(db){
+        return new Promise(function(res, rej){
+          var t = db.transaction(STORE, mode), req = fn(t.objectStore(STORE));
+          t.oncomplete = function(){ res(req ? req.result : undefined); };
+          t.onerror = t.onabort = function(){ rej(t.error); };
+        });
+      });
+    }
+    function has(habitId, dateStr){ return !!keys[key(habitId, dateStr)]; }
+    function get(habitId, dateStr){ return run("readonly", function(st){ return st.get(key(habitId, dateStr)); }); }
+    function put(habitId, dateStr, blob){
+      var k = key(habitId, dateStr);
+      return run("readwrite", function(st){ return st.put(blob, k); }).then(function(){ keys[k] = true; });
+    }
+    function del(habitId, dateStr){
+      var k = key(habitId, dateStr);
+      return run("readwrite", function(st){ return st.delete(k); }).then(function(){ delete keys[k]; });
+    }
+    function delHabit(habitId){
+      var pre = PREFIX+habitId+"_";
+      return run("readwrite", function(st){
+        Object.keys(keys).forEach(function(k){ if(k.indexOf(pre)===0){ st.delete(k); delete keys[k]; } });
+      }).catch(function(){});
+    }
+    // Pasa a IndexedDB las notas antiguas que estaban en localStorage y libera ese espacio.
+    function migrate(){
+      var old = [];
+      try{
+        for(var i=0;i<localStorage.length;i++){
+          var k = localStorage.key(i);
+          if(k && k.indexOf(PREFIX)===0) old.push(k);
+        }
+      }catch(e){ return Promise.resolve(); }
+      return old.reduce(function(chain, k){
+        return chain.then(function(){
+          var data = localStorage.getItem(k);
+          if(!data || data.indexOf("data:")!==0){ try{ localStorage.removeItem(k); }catch(e){} return; }
+          return fetch(data).then(function(r){ return r.blob(); }).then(function(blob){
+            return run("readwrite", function(st){ return st.put(blob, k); }).then(function(){
+              keys[k] = true;
+              try{ localStorage.removeItem(k); }catch(e){}
+            });
+          }).catch(function(){});
+        });
+      }, Promise.resolve());
+    }
+    function init(){
+      return open().then(function(){
+        return run("readonly", function(st){ return st.getAllKeys(); });
+      }).then(function(all){
+        (all||[]).forEach(function(k){ keys[k] = true; });
+        return migrate();
+      }).then(function(){ render(); }).catch(function(e){ console.warn("Notas de voz: IndexedDB no disponible", e); });
+    }
+    return {has:has, get:get, put:put, del:del, delHabit:delHabit, init:init};
+  })();
+  var voiceObjectUrl = null;
   function renderVoiceNoteUI(habitId, dateStr){
     var wrap = document.getElementById("voiceNoteWrap");
     if(!wrap) return;
-    var supported = (typeof MediaRecorder!=="undefined") && navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
+    var supported = (typeof MediaRecorder!=="undefined") && navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.indexedDB;
     if(!supported){
       wrap.innerHTML = '<p class="hint" style="margin:0;">Este navegador no permite grabar audio aquí.</p>';
       return;
     }
-    var url = getVoiceNote(habitId, dateStr);
-    if(url){
-      wrap.innerHTML = '<audio controls src="'+url+'" style="width:100%; margin-bottom:8px;"></audio>'+
-        '<button type="button" class="btn ghost small" id="btnDeleteVoice">🗑️ Borrar audio</button>';
-      document.getElementById("btnDeleteVoice").addEventListener("click", function(){
-        setVoiceNote(habitId, dateStr, null);
-        toast("Audio borrado");
-        renderVoiceNoteUI(habitId, dateStr);
-      });
+    if(voiceObjectUrl){ URL.revokeObjectURL(voiceObjectUrl); voiceObjectUrl = null; }
+    if(VoiceDB.has(habitId, dateStr)){
+      VoiceDB.get(habitId, dateStr).then(function(blob){
+        var w = document.getElementById("voiceNoteWrap");
+        if(!w) return;
+        if(!blob){ w.innerHTML = '<button type="button" class="btn ghost small" id="btnRecordVoice">🎙️ Grabar (máx. 30s)</button>'; document.getElementById("btnRecordVoice").addEventListener("click", function(){ startVoiceRecording(habitId, dateStr); }); return; }
+        voiceObjectUrl = URL.createObjectURL(blob);
+        w.innerHTML = '<audio controls src="'+voiceObjectUrl+'" style="width:100%; margin-bottom:8px;"></audio>'+
+          '<button type="button" class="btn ghost small" id="btnDeleteVoice">🗑️ Borrar audio</button>';
+        document.getElementById("btnDeleteVoice").addEventListener("click", function(){
+          VoiceDB.del(habitId, dateStr).then(function(){
+            toast("Audio borrado");
+            renderVoiceNoteUI(habitId, dateStr);
+            render();
+          }).catch(function(){ toast("No se pudo borrar el audio"); });
+        });
+      }).catch(function(){ wrap.innerHTML = '<p class="hint" style="margin:0;">No se pudo leer el audio.</p>'; });
     } else {
       wrap.innerHTML = '<button type="button" class="btn ghost small" id="btnRecordVoice">🎙️ Grabar (máx. 30s)</button>';
       document.getElementById("btnRecordVoice").addEventListener("click", function(){ startVoiceRecording(habitId, dateStr); });
@@ -4381,13 +4366,11 @@
         clearInterval(timerInt);
         stream.getTracks().forEach(function(t){ t.stop(); });
         var blob = new Blob(chunks, {type: rec.mimeType || "audio/webm"});
-        var reader = new FileReader();
-        reader.onload = function(){
-          setVoiceNote(habitId, dateStr, reader.result);
+        VoiceDB.put(habitId, dateStr, blob).then(function(){
           toast("🎙️ Nota de voz guardada");
           renderVoiceNoteUI(habitId, dateStr);
-        };
-        reader.readAsDataURL(blob);
+          render();
+        }).catch(function(){ toast("No se pudo guardar el audio"); renderVoiceNoteUI(habitId, dateStr); });
       };
       rec.start();
       var stopBtn = document.getElementById("btnStopVoice");
@@ -4448,15 +4431,27 @@
           '<button type="button" class="btn ghost small" id="btnClearDaily">Desactivar</button>'+
         '</div>'+
       '</div>'+
+      '<div class="field">'+
+        '<label>Aviso si llevas días sin marcar un hábito</label>'+
+        '<div style="display:flex; align-items:center; gap:10px;">'+
+          '<input type="time" id="inpInsistTime" value="'+insistTime()+'" style="font-family:var(--sans); font-size:14px; padding:9px 10px; border:1px solid var(--paper-line); border-radius:var(--radius); background:var(--surface); color:var(--ink);">'+
+          '<button type="button" class="btn ghost small" id="btnClearInsist">Desactivar</button>'+
+        '</div>'+
+      '</div>'+
       '<button class="btn small" id="btnSaveDaily" style="margin-top:10px;">Guardar</button>';
     document.getElementById("overlayAbout").classList.add("open");
 
     document.getElementById("btnClearDaily").addEventListener("click", function(){
       document.getElementById("inpDailyTime").value = "";
     });
+    document.getElementById("btnClearInsist").addEventListener("click", function(){
+      document.getElementById("inpInsistTime").value = "";
+    });
     document.getElementById("btnSaveDaily").addEventListener("click", function(){
+      try{ localStorage.setItem(INSIST_KEY, document.getElementById("inpInsistTime").value || ""); }catch(e){}
       var v = document.getElementById("inpDailyTime").value || "";
       if(v){ localStorage.setItem(DAILY_KEY, v); ensureNotifPermission(); } else { localStorage.removeItem(DAILY_KEY); }
+      if(Notif) Notif.schedule();
       document.getElementById("overlayAbout").classList.remove("open");
       render();
       toast(v ? "Recordatorio diario a las "+v : "Recordatorio diario desactivado");
@@ -4812,19 +4807,93 @@
     });
   }
 
+  var AUTH_INP = "width:100%; box-sizing:border-box; font-family:var(--sans); font-size:14px; padding:10px 12px; border:1px solid var(--paper-line); border-radius:var(--radius); background:var(--surface); color:var(--ink); margin-bottom:10px;";
+  function openAccountModal(){
+    var el = document.getElementById("aboutText");
+    document.getElementById("aboutTitle").textContent = "Cuenta";
+    if(!auth){
+      el.innerHTML = '<p class="hint" style="margin-top:0;">La cuenta no está disponible ahora mismo (no hay conexión con Firebase).</p>';
+      document.getElementById("overlayAbout").classList.add("open");
+      return;
+    }
+    var user = curUser();
+    if(user){
+      el.innerHTML = '<p class="hint" style="margin-top:0;">Sesión iniciada como <strong style="color:var(--ink);">'+escapeHtml(user.email||"")+'</strong>. La cuenta se usa para sincronizar con tu pareja: solo vosotros dos podéis ver esos datos.</p>'+
+        '<button class="btn ghost" id="btnAuthLogout" style="width:100%;">Cerrar sesión</button>'+
+        '<button class="btn danger small" id="btnAuthDelete" style="width:100%; margin-top:18px;">Eliminar mi cuenta</button>';
+      document.getElementById("overlayAbout").classList.add("open");
+      document.getElementById("btnAuthLogout").addEventListener("click", function(){
+        auth.signOut().then(function(){ toast("Sesión cerrada"); openAccountModal(); });
+      });
+      document.getElementById("btnAuthDelete").addEventListener("click", function(){
+        if(!confirm("¿Eliminar tu cuenta? Saldrás de la sincronización. Tus hábitos de este dispositivo no se borran.")) return;
+        var u = curUser();
+        if(!u) return;
+        cloudLeave();
+        u.delete().then(function(){ toast("Cuenta eliminada"); openAccountModal(); render(); })
+          .catch(function(e){ toast(authErrorMsg(e)); });
+      });
+      return;
+    }
+    el.innerHTML = '<p class="hint" style="margin-top:0;">Inicia sesión o crea una cuenta para sincronizar tus hábitos con tu pareja de forma privada. Sin cuenta, la app funciona igual, solo en este dispositivo.</p>'+
+      '<input type="email" id="inpAuthEmail" autocomplete="email" placeholder="Email" style="'+AUTH_INP+'">'+
+      '<input type="password" id="inpAuthPass" autocomplete="current-password" placeholder="Contraseña (mín. 6 caracteres)" style="'+AUTH_INP+'">'+
+      '<div style="display:flex; gap:8px;">'+
+        '<button class="btn" id="btnAuthLogin" style="flex:1;">Entrar</button>'+
+        '<button class="btn ghost" id="btnAuthSignup" style="flex:1;">Crear cuenta</button>'+
+      '</div>'+
+      '<button class="btn ghost small" id="btnAuthReset" style="width:100%; margin-top:12px;">Olvidé mi contraseña</button>';
+    document.getElementById("overlayAbout").classList.add("open");
+    function vals(){ return {email:document.getElementById("inpAuthEmail").value.trim(), pass:document.getElementById("inpAuthPass").value}; }
+    function busy(on){ ["btnAuthLogin","btnAuthSignup","btnAuthReset"].forEach(function(id){ var b=document.getElementById(id); if(b) b.disabled=on; }); }
+    function run(fn, okMsg){
+      var v = vals();
+      if(!v.email || !v.pass){ toast("Escribe email y contraseña"); return; }
+      busy(true);
+      fn(v.email, v.pass).then(function(){ toast(okMsg); openAccountModal(); render(); })
+        .catch(function(e){ busy(false); toast(authErrorMsg(e)); });
+    }
+    document.getElementById("btnAuthLogin").addEventListener("click", function(){ run(function(e,p){ return auth.signInWithEmailAndPassword(e,p); }, "Sesión iniciada"); });
+    document.getElementById("btnAuthSignup").addEventListener("click", function(){ run(function(e,p){ return auth.createUserWithEmailAndPassword(e,p); }, "Cuenta creada"); });
+    document.getElementById("btnAuthReset").addEventListener("click", function(){
+      var email = vals().email;
+      if(!email){ toast("Escribe tu email arriba"); return; }
+      auth.sendPasswordResetEmail(email).then(function(){ toast("Te hemos enviado un email para cambiar la contraseña"); })
+        .catch(function(e){ toast(authErrorMsg(e)); });
+    });
+  }
+
   function openSyncModal(){
-    var html;
-    if(householdCode){
-      html = '<p class="hint" style="margin-top:0;">Sincronizado. Comparte este código con tu pareja para que lo introduzca en su móvil (Configuración → Sincronización → Unirme) y veáis los mismos hábitos los dos, al momento.</p>'+
-        '<div class="sync-code">'+householdCode+'</div>'+
-        '<button class="btn ghost small" id="btnCopyCode" style="margin-top:10px; width:100%;">📋 Copiar código</button>'+
-        '<button class="btn danger small" id="btnLeaveSync" style="margin-top:18px; width:100%;">Dejar de sincronizar este móvil</button>';
+    var user = curUser();
+    var html = '';
+    if(legacySyncReset){
+      html += '<p class="hint" style="margin-top:0; color:var(--danger);">Tu sincronización anterior (código sin cuenta) se ha desactivado por seguridad. Inicia sesión y crea una nueva.</p>';
+      legacySyncReset = false;
+    }
+    if(!db){
+      html += '<p class="hint" style="margin-top:0;">La sincronización no está disponible ahora mismo.</p>';
+    } else if(!user){
+      html += '<p class="hint" style="margin-top:0;">Para sincronizar con tu pareja primero inicia sesión con tu cuenta. Así solo vosotros dos podéis ver vuestros datos.</p>'+
+        '<button class="btn" id="btnSyncLogin" style="width:100%;">Iniciar sesión / crear cuenta</button>';
+    } else if(householdId){
+      var inv = inviteInfo, valid = inv && inv.code && (!inv.expires || inv.expires.getTime() > Date.now());
+      html += '<p class="hint" style="margin-top:0;">Sincronizado'+(householdMembers ? ' · '+householdMembers+(householdMembers===1?' miembro':' miembros') : '')+'. Para añadir a tu pareja, dale este código: lo introduce en Configuración → Sincronización → Unirme.</p>';
+      if(valid){
+        var ex = inv.expires;
+        html += '<div class="sync-code">'+escapeHtml(inv.code)+'</div>'+
+          (ex ? '<p class="hint" style="text-align:center;">Válido hasta el '+ex.getDate()+' '+MESES_CORTOS[ex.getMonth()]+' a las '+("0"+ex.getHours()).slice(-2)+':'+("0"+ex.getMinutes()).slice(-2)+'</p>' : '')+
+          '<button class="btn ghost small" id="btnCopyCode" style="margin-top:6px; width:100%;">📋 Copiar código</button>';
+      } else {
+        html += '<p class="hint">No hay ningún código de invitación activo.</p>';
+      }
+      html += '<button class="btn ghost small" id="btnNewInvite" style="margin-top:8px; width:100%;">🔄 Generar código nuevo</button>'+
+        '<button class="btn danger small" id="btnLeaveSync" style="margin-top:18px; width:100%;">Salir de la sincronización</button>';
     } else {
-      html = '<p class="hint" style="margin-top:0;">Sincroniza tus hábitos entre tu móvil y el de tu pareja, en tiempo real.</p>'+
-        '<button class="btn" id="btnCreateSync" style="width:100%;">Crear código nuevo (soy el primero)</button>'+
+      html += '<p class="hint" style="margin-top:0;">Sincroniza tus hábitos con tu pareja en tiempo real. Sesión: <strong style="color:var(--ink);">'+escapeHtml(user.email||"")+'</strong></p>'+
+        '<button class="btn" id="btnCreateSync" style="width:100%;">Crear grupo nuevo (soy el primero)</button>'+
         '<p class="hint" style="text-align:center;">— o —</p>'+
         '<div style="display:flex; gap:8px;">'+
-          '<input type="text" id="inpJoinCode" maxlength="8" placeholder="Código de tu pareja" style="flex:1; font-family:var(--mono); text-transform:uppercase; font-size:14px; padding:9px 10px; border:1px solid var(--paper-line); border-radius:var(--radius); background:var(--surface); color:var(--ink);">'+
+          '<input type="text" id="inpJoinCode" maxlength="10" placeholder="Código de tu pareja" style="flex:1; font-family:var(--mono); text-transform:uppercase; font-size:14px; padding:9px 10px; border:1px solid var(--paper-line); border-radius:var(--radius); background:var(--surface); color:var(--ink);">'+
           '<button class="btn ghost small" id="btnJoinSync">Unirme</button>'+
         '</div>';
     }
@@ -4832,25 +4901,31 @@
     document.getElementById("aboutText").innerHTML = html;
     document.getElementById("overlayAbout").classList.add("open");
 
-    var createBtn = document.getElementById("btnCreateSync");
-    if(createBtn) createBtn.addEventListener("click", function(){ cloudCreate(); openSyncModal(); });
-    var joinBtn = document.getElementById("btnJoinSync");
-    if(joinBtn) joinBtn.addEventListener("click", function(){
+    function on(id, fn){ var b = document.getElementById(id); if(b) b.addEventListener("click", function(){ fn(b); }); }
+    on("btnSyncLogin", function(){ openAccountModal(); });
+    on("btnCreateSync", function(b){ b.textContent = "Creando…"; b.disabled = true; cloudCreate(function(){ openSyncModal(); }); });
+    on("btnJoinSync", function(b){
       var v = document.getElementById("inpJoinCode").value;
-      joinBtn.textContent = "Conectando…"; joinBtn.disabled = true;
+      b.textContent = "Conectando…"; b.disabled = true;
       cloudJoin(v, function(){ openSyncModal(); });
     });
-    var copyBtn = document.getElementById("btnCopyCode");
-    if(copyBtn) copyBtn.addEventListener("click", function(){
+    on("btnCopyCode", function(){
+      var code = inviteInfo && inviteInfo.code;
+      if(!code) return;
       if(navigator.clipboard && navigator.clipboard.writeText){
-        navigator.clipboard.writeText(householdCode).then(function(){ toast("Código copiado"); });
-      } else { toast(householdCode); }
+        navigator.clipboard.writeText(code).then(function(){ toast("Código copiado"); });
+      } else { toast(code); }
     });
-    var leaveBtn = document.getElementById("btnLeaveSync");
-    if(leaveBtn) leaveBtn.addEventListener("click", function(){
-      if(confirm("¿Dejar de sincronizar este móvil? Tus datos locales se quedan como están, pero dejarán de actualizarse con los de tu pareja.")){
+    on("btnNewInvite", function(b){
+      b.disabled = true;
+      cloudNewInvite().then(function(){ toast("Código nuevo generado"); openSyncModal(); })
+        .catch(function(){ toast("No se pudo generar el código"); b.disabled = false; });
+    });
+    on("btnLeaveSync", function(){
+      if(confirm("¿Salir de la sincronización? Tus datos locales se quedan como están, pero dejarán de actualizarse con los de tu pareja.")){
         cloudLeave();
         openSyncModal();
+        render();
       }
     });
   }
@@ -5101,27 +5176,34 @@
   }
 
   function openNotifModal(){
-    var supported = typeof Notification!=="undefined";
-    var status = !supported ? "Tu navegador no soporta avisos." :
-      Notification.permission==="granted" ? "Activados ✅" :
-      Notification.permission==="denied" ? "Bloqueados en el navegador (revisa los permisos del sitio)" : "Aún no activados";
-    document.getElementById("aboutTitle").textContent = "Avisos del navegador";
-    document.getElementById("aboutText").innerHTML =
-      '<p class="hint" style="margin-top:0;">Ponle una hora a un hábito (al editarlo) y, mientras tengas esta pestaña abierta en el navegador, '+
-      'te avisará ese día a esa hora si aún no lo has marcado. Puede estar en segundo plano, pero si cierras el navegador del todo, no llegará el aviso.</p>'+
-      '<p class="hint"><strong>Estado:</strong> '+status+'</p>'+
-      (supported && Notification.permission==="default" ? '<button class="btn" id="btnEnableNotif">Activar avisos</button>' : '');
-    document.getElementById("overlayAbout").classList.add("open");
-    var btn = document.getElementById("btnEnableNotif");
-    if(btn){
-      btn.addEventListener("click", function(){
-        Notification.requestPermission().then(function(){ openNotifModal(); render(); });
-      });
+    var native = Notif && Notif.isNative();
+    document.getElementById("aboutTitle").textContent = "Avisos";
+    function paint(state){
+      var status = state==="granted" ? "Activados ✅" :
+        state==="denied" ? "Bloqueados (actívalos en los ajustes del dispositivo)" :
+        (!native && typeof Notification==="undefined") ? "Tu navegador no soporta avisos." : "Aún no activados";
+      var intro = native
+        ? 'Ponle una hora a un hábito (al editarlo) o activa el recordatorio diario y recibirás el aviso en tu móvil aunque la app esté cerrada. Los avisos de hábitos ya cumplidos hoy no se envían.'
+        : 'Ponle una hora a un hábito (al editarlo) y, mientras tengas esta pestaña abierta en el navegador, te avisará ese día a esa hora si aún no lo has marcado. Si cierras el navegador del todo, no llegará el aviso.';
+      document.getElementById("aboutText").innerHTML =
+        '<p class="hint" style="margin-top:0;">'+intro+'</p>'+
+        '<p class="hint"><strong>Estado:</strong> '+status+'</p>'+
+        (state==="default"||state==="prompt"||state==="prompt-with-rationale" ? '<button class="btn" id="btnEnableNotif">Activar avisos</button>' : '');
+      document.getElementById("overlayAbout").classList.add("open");
+      var btn = document.getElementById("btnEnableNotif");
+      if(btn){
+        btn.addEventListener("click", function(){
+          Promise.resolve(Notif ? Notif.request() : Notification.requestPermission()).then(function(){ openNotifModal(); render(); });
+        });
+      }
     }
+    if(Notif){ Notif.check().then(paint); }
+    else paint(typeof Notification!=="undefined" ? Notification.permission : "denied");
   }
 
   var notifiedKeys = {};
   function checkReminders(){
+    if(Notif && Notif.isNative()) return;
     var now = new Date();
     var nowStr = ("0"+now.getHours()).slice(-2)+":"+("0"+now.getMinutes()).slice(-2);
     activeHabits().forEach(function(h){
@@ -5149,7 +5231,8 @@
       }
     }
 
-    if(nowStr==="10:00"){
+    var insistAt = insistTime();
+    if(insistAt && nowStr===insistAt){
       var insistKey = "habitgrid_insistent_notified_"+fmt(today());
       if(!localStorage.getItem(insistKey)){
         var staleNow = staleHabits(activeHabits());
@@ -5174,8 +5257,274 @@
   document.getElementById("btnCloseAbout").addEventListener("click", function(){ document.getElementById("overlayAbout").classList.remove("open"); });
   document.getElementById("overlayAbout").addEventListener("click", function(e){ if(e.target===document.getElementById("overlayAbout")) document.getElementById("overlayAbout").classList.remove("open"); });
 
+  // ================= notificaciones locales (nativas con Capacitor, con respaldo web) =================
+  Notif = (function(){
+    var LN = null, cached = "unknown", timer = null;
+    var MAX_PENDING = 60, HORIZON_DAYS = 7, CHANNEL = "habits";
+    function plugin(){
+      if(LN) return LN;
+      try{
+        var C = window.Capacitor;
+        if(C && C.isNativePlatform && C.isNativePlatform() && C.Plugins && C.Plugins.LocalNotifications){ LN = C.Plugins.LocalNotifications; }
+      }catch(e){}
+      return LN;
+    }
+    function isNative(){ return !!plugin(); }
+    function granted(){
+      if(isNative()) return cached==="granted";
+      return typeof Notification!=="undefined" && Notification.permission==="granted";
+    }
+    function check(){
+      var p = plugin();
+      if(!p) return Promise.resolve(typeof Notification!=="undefined" ? Notification.permission : "denied");
+      return p.checkPermissions().then(function(r){ cached = r.display; return r.display; }).catch(function(){ return "denied"; });
+    }
+    function request(){
+      var p = plugin();
+      if(!p){
+        if(typeof Notification!=="undefined" && Notification.permission==="default") return Notification.requestPermission();
+        return Promise.resolve();
+      }
+      return p.requestPermissions().then(function(r){ cached = r.display; schedule(); return r.display; }).catch(function(){ return "denied"; });
+    }
+    function atTime(day, hhmm){
+      var parts = String(hhmm).split(":");
+      var x = new Date(day);
+      x.setHours(parseInt(parts[0],10)||0, parseInt(parts[1],10)||0, 0, 0);
+      return x;
+    }
+    function build(){
+      var now = new Date(), items = [];
+      var list = activeHabits();
+      var daily = localStorage.getItem(DAILY_KEY) || "";
+      for(var off=0; off<HORIZON_DAYS; off++){
+        var day = addDays(today(), off), key = fmt(day);
+        list.forEach(function(h){
+          if(!h.reminder || h.kind==="avoid") return;
+          if(!isScheduled(h, day)) return;
+          if(off===0 && isDaySuccess(h, key)) return;
+          var when = atTime(day, h.reminder);
+          if(when<=now) return;
+          items.push({title:h.icon+" "+h.name, body: off===0 ? "Aún no lo has marcado hoy." : "Hoy toca este hábito.", at:when});
+        });
+        if(daily){
+          var dw = atTime(day, daily);
+          if(dw>now) items.push({title:"Rachario", body:"Revisa tus hábitos de hoy 🔥", at:dw});
+        }
+      }
+      var stale = staleHabits(list);
+      var it = insistTime();
+      var ten = it ? atTime(today(), it) : null;
+      if(ten && stale.length>0 && ten>now){
+        items.push({title:"🔔 Rachario te necesita", body:"Llevas días sin marcar: "+stale.slice(0,3).map(function(x){return x.h.name;}).join(", ")+". ¡Retómalo hoy!", at:ten});
+      }
+      items.sort(function(a,b){ return a.at-b.at; });
+      return items.slice(0, MAX_PENDING);
+    }
+    function run(){
+      var p = plugin();
+      if(!p) return;
+      check().then(function(state){
+        if(state!=="granted") return;
+        return p.getPending().then(function(r){
+          var pend = (r && r.notifications) || [];
+          return pend.length ? p.cancel({notifications: pend.map(function(n){ return {id:n.id}; })}) : null;
+        }).then(function(){
+          var items = build();
+          if(!items.length) return;
+          return p.schedule({notifications: items.map(function(it,i){
+            return {id:i+1, title:it.title, body:it.body, channelId:CHANNEL, schedule:{at:it.at, allowWhileIdle:true}};
+          })});
+        });
+      }).catch(function(e){ console.warn("No se pudieron programar los avisos", e); });
+    }
+    function schedule(){
+      if(!plugin()) return;
+      clearTimeout(timer);
+      timer = setTimeout(run, 500);
+    }
+    function init(){
+      var p = plugin();
+      if(!p) return;
+      try{
+        if(p.createChannel) p.createChannel({id:CHANNEL, name:"Hábitos", description:"Avisos de tus hábitos", importance:4, visibility:1, vibration:true});
+      }catch(e){}
+      check().then(function(state){
+        if(state==="granted") schedule();
+        if(activeView==="config") render();
+      });
+      document.addEventListener("visibilitychange", function(){ if(!document.hidden){ check().then(function(){ schedule(); }); } });
+    }
+    return {isNative:isNative, granted:granted, check:check, request:request, schedule:schedule, init:init};
+  })();
+
+  // ================= bloqueo por perfil con Face ID (WebAuthn) + selector de usuario =================
+  // Cada perfil puede protegerse con Face ID / Touch ID. Es un bloqueo local de la app: pide la
+  // verificación biométrica del dispositivo para abrir ese perfil. Requiere abrir la app desde https.
+  var FaceLock = (function(){
+    var PREFIX = "rachario_faceid_", LOCK_AFTER_MS = 30000;
+    var platformOk = null, busy = false, hiddenAt = 0, forced = false, failed = false;
+    function b64e(buf){
+      var b = new Uint8Array(buf), t = "";
+      for(var i=0;i<b.length;i++) t += String.fromCharCode(b[i]);
+      return btoa(t).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+    }
+    function b64d(str){
+      str = str.replace(/-/g,"+").replace(/_/g,"/");
+      while(str.length%4) str += "=";
+      var bin = atob(str), out = new Uint8Array(bin.length);
+      for(var i=0;i<bin.length;i++) out[i] = bin.charCodeAt(i);
+      return out;
+    }
+    function rand(n){ var a = new Uint8Array(n); crypto.getRandomValues(a); return a; }
+    function credOf(pid){ try{ return localStorage.getItem(PREFIX+pid); }catch(e){ return null; } }
+    function isLocked(pid){ return !!credOf(pid); }
+    function remove(pid){ try{ localStorage.removeItem(PREFIX+pid); }catch(e){} }
+    function profileById(pid){ return profiles.find(function(p){ return p.id===pid; }); }
+    function initial(p){ return p && p.name ? p.name.charAt(0).toUpperCase() : "?"; }
+
+    function available(){
+      if(platformOk!==null) return Promise.resolve(platformOk);
+      if(!window.PublicKeyCredential || !navigator.credentials || !window.isSecureContext){ platformOk = false; return Promise.resolve(false); }
+      return PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+        .then(function(v){ platformOk = !!v; return platformOk; })
+        .catch(function(){ platformOk = false; return false; });
+    }
+    function enroll(p){
+      return navigator.credentials.create({publicKey:{
+        challenge: rand(32),
+        rp: {name:"Rachario"},
+        user: {id: rand(16), name: p.name, displayName: p.name},
+        pubKeyCredParams: [{type:"public-key", alg:-7}, {type:"public-key", alg:-257}],
+        authenticatorSelection: {authenticatorAttachment:"platform", userVerification:"required", residentKey:"discouraged"},
+        attestation: "none", timeout: 60000
+      }}).then(function(cred){
+        try{ localStorage.setItem(PREFIX+p.id, b64e(cred.rawId)); }catch(e){ throw new Error("storage"); }
+      });
+    }
+    function verify(pid){
+      var id = credOf(pid);
+      if(!id) return Promise.resolve();
+      return navigator.credentials.get({publicKey:{
+        challenge: rand(32),
+        allowCredentials: [{type:"public-key", id:b64d(id), transports:["internal"]}],
+        userVerification: "required", timeout: 60000
+      }}).then(function(){});
+    }
+
+    // Activar / desactivar desde el modal de perfiles (para quitarlo hay que verificar antes).
+    function toggle(pid){
+      var p = profileById(pid);
+      if(!p) return Promise.resolve();
+      if(isLocked(pid)){
+        return verify(pid).then(function(){ remove(pid); toast("Face ID desactivado en "+p.name); })
+          .catch(function(){ toast("No se pudo verificar, el bloqueo sigue activo"); });
+      }
+      return available().then(function(ok){
+        if(!ok){ toast("Face ID no está disponible aquí: abre Rachario desde una dirección https en Safari"); return; }
+        return enroll(p).then(function(){ toast("🔒 Face ID activado en "+p.name); });
+      }).catch(function(e){
+        toast(e && e.name==="NotAllowedError" ? "Cancelado" : "No se pudo activar Face ID");
+      });
+    }
+
+    function finish(pid){
+      var p = profileById(pid);
+      forced = false; failed = false;
+      document.getElementById("lockScreen").style.display = "none";
+      if(pid!==activeProfileId) switchProfile(pid); else render();
+      toast("Hola, "+(p ? p.name : ""));
+    }
+    // Cambiar a un perfil (verifica Face ID si ese perfil lo tiene). Se usa desde Configuración → Perfil.
+    function switchTo(pid, done){
+      if(!isLocked(pid) || pid===activeProfileId){ switchProfile(pid); if(done) done(); return; }
+      verify(pid).then(function(){ switchProfile(pid); if(done) done(); })
+        .catch(function(){ toast("No se pudo verificar con Face ID"); });
+    }
+
+    function msg(t){ var m = document.getElementById("lockMsg"); if(m) m.textContent = t || ""; }
+    function choose(pid){
+      if(busy) return;
+      if(!isLocked(pid)){ finish(pid); return; }
+      busy = true; msg("");
+      verify(pid).then(function(){ busy = false; finish(pid); })
+        .catch(function(){ busy = false; failed = true; msg("No se pudo verificar. Inténtalo de nuevo."); showRecover(pid); });
+    }
+    function showRecover(pid){
+      var box = document.getElementById("lockRecover");
+      if(!box || box.getAttribute("data-pid")===pid && box.innerHTML) return;
+      box.setAttribute("data-pid", pid);
+      box.innerHTML = '<button class="btn ghost small" id="lockRecoverBtn">¿No funciona? Recuperar acceso</button>';
+      document.getElementById("lockRecoverBtn").addEventListener("click", function(){ recover(pid); });
+    }
+    function recover(pid){
+      var user = curUser(), box = document.getElementById("lockRecover");
+      if(!user){
+        if(confirm("No hay una cuenta iniciada en este dispositivo, así que no puedo comprobar que eres tú. ¿Quitar el bloqueo de este perfil?")){ remove(pid); finish(pid); }
+        return;
+      }
+      box.innerHTML = '<p class="lock-sub" style="margin:0 0 8px;">Escribe la contraseña de tu cuenta ('+escapeHtml(user.email||"")+') para quitar el bloqueo.</p>'+
+        '<input type="password" id="lockPass" autocomplete="current-password" placeholder="Contraseña" style="width:100%; box-sizing:border-box; font-family:var(--sans); font-size:14px; padding:10px 12px; border:1px solid var(--paper-line); border-radius:var(--radius); background:var(--surface); color:var(--ink); margin-bottom:8px;">'+
+        '<button class="btn small" id="lockPassOk" style="width:100%;">Quitar bloqueo</button>';
+      document.getElementById("lockPassOk").addEventListener("click", function(){
+        var pass = document.getElementById("lockPass").value;
+        if(!pass) return;
+        var cred = firebase.auth.EmailAuthProvider.credential(user.email, pass);
+        user.reauthenticateWithCredential(cred).then(function(){ remove(pid); finish(pid); })
+          .catch(function(e){ msg(authErrorMsg(e)); });
+      });
+    }
+
+    function showPicker(isForced){
+      forced = !!isForced; failed = false; busy = false;
+      var el = document.getElementById("lockScreen");
+      var html = '<div class="lock-box"><div class="lock-title">¿Quién eres?</div>'+
+        '<div class="lock-sub">'+(forced ? 'Verifica con Face ID para abrir tu perfil.' : 'Elige un perfil. Los protegidos piden Face ID.')+'</div>';
+      profiles.forEach(function(p){
+        html += '<button class="lock-profile'+(p.id===activeProfileId?' active':'')+'" data-pid="'+p.id+'">'+
+          '<span class="lock-avatar" style="background:'+(p.color||PROFILE_COLORS[0])+';">'+escapeHtml(initial(p))+'</span>'+
+          '<span class="lock-name">'+escapeHtml(p.name)+'</span>'+
+          '<span class="lock-ico">'+(isLocked(p.id)?'🔒':'')+'</span></button>';
+      });
+      html += '<div class="lock-msg" id="lockMsg"></div><div id="lockRecover"></div>';
+      if(!forced) html += '<button class="btn ghost small" id="lockClose" style="margin-top:10px;">Cerrar</button>';
+      html += '</div>';
+      el.innerHTML = html;
+      el.style.display = "flex";
+      el.querySelectorAll(".lock-profile").forEach(function(b){
+        b.addEventListener("click", function(){ choose(b.getAttribute("data-pid")); });
+      });
+      var close = document.getElementById("lockClose");
+      if(close) close.addEventListener("click", function(){ el.style.display = "none"; });
+    }
+
+    function refreshButton(){
+      var b = document.getElementById("btnUserTop");
+      if(!b) return;
+      var p = currentProfile();
+      b.textContent = initial(p);
+      b.style.background = (p && p.color) || ""; b.style.borderColor = (p && p.color) || "";
+      b.style.color = "#fff";
+      b.style.display = (profiles.length>1 || isLocked(activeProfileId)) ? "flex" : "none";
+    }
+    function init(){
+      var btn = document.getElementById("btnUserTop");
+      if(btn) btn.addEventListener("click", function(){ showPicker(false); });
+      if(isLocked(activeProfileId)) showPicker(true);
+      document.addEventListener("visibilitychange", function(){
+        if(document.hidden){ hiddenAt = Date.now(); return; }
+        if(hiddenAt && Date.now()-hiddenAt > LOCK_AFTER_MS && isLocked(activeProfileId) && !forced) showPicker(true);
+        hiddenAt = 0;
+      });
+    }
+    return {isLocked:isLocked, toggle:toggle, switchTo:switchTo, showPicker:showPicker, refreshButton:refreshButton, init:init};
+  })();
+
   // ================= init =================
+  FaceLock.init();
   render();
+  Notif.init();
+  VoiceDB.init();
 
   // Funciona sin conexión si el archivo está alojado en un sitio real (junto a sw.js).
   // En file:// o dentro del artefacto de Claude, esto simplemente no hace nada (fallo silencioso).
